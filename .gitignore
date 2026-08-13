@@ -18,3 +18,4 @@ __pycache__/
 !reports/*.png
 .ipynb_checkpoints/
 .DS_Store
+CLAUDE.md
