@@ -34,6 +34,7 @@ LOG_COLUMNS = [
     "description",
     "model",
     "n_features",
+    "n_model_features",
     "n_train",
     "oof_auc",
     "fold_mean",
@@ -53,6 +54,7 @@ class CVResult:
     test_pred: np.ndarray | None
     fold_aucs: list[float] = field(default_factory=list)
     n_features: int = 0
+    n_model_features: int = 0
     n_train: int = 0
     fit_seconds: float = 0.0
 
@@ -80,6 +82,19 @@ class CVResult:
         )
 
 
+def _count_model_features(fitted_estimator, fallback: int) -> int:
+    """Width of the matrix the estimator actually sees, after preprocessing.
+
+    Differs from the input column count whenever encoding changes the width —
+    one-hot expansion, added indicators — so the log records what the model was
+    really fit on rather than what was handed to the pipeline.
+    """
+    try:
+        return int(len(fitted_estimator.named_steps["prep"].get_feature_names_out()))
+    except Exception:
+        return fallback
+
+
 def run_cv(
     estimator,
     X: pd.DataFrame,
@@ -103,11 +118,15 @@ def run_cv(
     oof = np.zeros(len(X), dtype=np.float64)
     test_pred = np.zeros(len(X_test), dtype=np.float64) if X_test is not None else None
     fold_aucs: list[float] = []
+    n_model_features = 0
     start = time.perf_counter()
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), start=1):
         est = clone(estimator)
         est.fit(X.iloc[train_idx], y[train_idx])
+
+        if fold == 1:
+            n_model_features = _count_model_features(est, X.shape[1])
 
         oof[val_idx] = est.predict_proba(X.iloc[val_idx])[:, 1]
         fold_auc = float(roc_auc_score(y[val_idx], oof[val_idx]))
@@ -127,6 +146,7 @@ def run_cv(
         test_pred=test_pred,
         fold_aucs=fold_aucs,
         n_features=X.shape[1],
+        n_model_features=n_model_features,
         n_train=len(X),
         fit_seconds=time.perf_counter() - start,
     )
@@ -162,6 +182,7 @@ def log_run(result: CVResult, run_id: str | None = None) -> str:
         "description": result.description,
         "model": result.model,
         "n_features": result.n_features,
+        "n_model_features": result.n_model_features,
         "n_train": result.n_train,
         "oof_auc": round(result.oof_auc, 6),
         "fold_mean": round(result.fold_mean, 6),

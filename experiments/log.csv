@@ -1,0 +1,8 @@
+run_id,timestamp,description,model,n_features,n_model_features,n_train,oof_auc,fold_mean,fold_std,fit_seconds,public_lb,gap
+001,2026-08-13T01:57:51Z,Dummy (prior) — harness sanity check,dummy,12,12,691369,0.499999,0.5,0.0,1.8,,
+002,2026-08-13T01:58:04Z,"Phase 0: HistGBM, numeric cols only",baseline,12,9,691369,0.954677,0.954678,0.000804,12.4,,
+003,2026-08-13T01:58:10Z,"Logistic regression, impute+scale+onehot",logistic,12,26,691369,0.913793,0.913795,0.000771,6.2,,
+004,2026-08-13T02:01:07Z,"Random forest (200 trees, leaf>=50)",rf,12,12,691369,0.940593,0.940596,0.000643,176.2,,
+005,2026-08-13T02:01:29Z,"HistGBM, numeric + categorical",histgbm,12,12,691369,0.954704,0.954704,0.000782,21.0,,
+006,2026-08-13T02:01:54Z,HistGBM + is-missing indicators,histgbm_isna,12,21,691369,0.954704,0.954704,0.000782,24.6,,
+007,2026-08-13T02:01:57Z,Is-missing pattern only (MNAR test),missingness_only,12,12,691369,0.500382,0.500374,0.000739,2.6,,

@@ -4,6 +4,10 @@ data/
 # Generated submissions
 submissions/
 
+# OOF prediction vectors — ~5MB each and fully regenerable from a logged run.
+# experiments/log.csv stays tracked; these do not.
+experiments/oof/
+
 # Environment
 .venv/
 __pycache__/
