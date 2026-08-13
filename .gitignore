@@ -1,0 +1,16 @@
+# Competition data — never commit (Kaggle redistribution rules)
+data/
+
+# Generated submissions
+submissions/
+
+# Environment
+.venv/
+__pycache__/
+*.pyc
+
+# Artifacts
+*.png
+!reports/*.png
+.ipynb_checkpoints/
+.DS_Store
