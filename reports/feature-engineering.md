@@ -7,7 +7,15 @@ categorical-features result from Phase 3, the effect is also larger than the
 0.0008 fold-to-fold noise floor — so it is both statistically real and big
 enough to care about.
 
-Runs: `008` (all 15 engineered features) and `009` (pruned to 5).
+Runs: `008` (all 15 engineered features), `009` (pruned to 5) and `011`
+(control feature ablated).
+
+| run | model | model features | OOF AUC | fold std |
+|---|---|---|---|---|
+| `005` | no engineered features (previous best) | 12 | 0.954704 | 0.000782 |
+| `008` | **all 15 engineered** | 27 | **0.956091** | 0.000680 |
+| `009` | 5 survivors only | 17 | 0.956023 | 0.000781 |
+| `011` | 15 minus the `sleep_deficit` control | 26 | 0.955909 | 0.000722 |
 
 ---
 
@@ -21,13 +29,18 @@ tree not already reach by splitting on the raw columns?"
 
 That question rules out more than it first appears.
 
-**A tree splits on `x <= t`. Any strictly monotonic function of a single column
-gives the identical partition of the rows**, just with relabelled thresholds.
-So `8 - sleep_hours` ("sleep deficit") and `24 - waking_load` ("free hours")
-cannot add anything to a tree, however meaningful they are to a human reading
-a column list. Reciprocals are monotonic too on positive data, so
-`daily_screen / app_opens` and `app_opens / daily_screen` are the *same
-feature* to a tree; only one of each such pair is worth including.
+**A tree splits on `x <= t`, so a transform that preserves the ordering of a
+column gives the identical partition of the rows**, just with relabelled
+thresholds. Multiplying a column by 3.7 cannot help a tree, however different
+the numbers look. Reciprocals reverse order on positive data, so
+`daily_screen / app_opens` and `app_opens / daily_screen` are near-enough the
+same feature; only one of each such pair is worth including.
+
+> **This argument is right about increasing transforms and wrong about
+> decreasing ones.** A control feature was included to test it, and the test
+> failed in an instructive way — see
+> [The control feature was not information-free](#the-control-feature-was-not-information-free-and-the-reason-is-the-splitting-rule)
+> below. Both claims were measured, not assumed.
 
 **What a tree genuinely cannot reach cheaply is a ratio of two columns.** To
 approximate the boundary `a / b <= t` with axis-aligned splits, it has to
@@ -55,12 +68,12 @@ except one deliberate control.
 | `screen_sleep_ratio` | `daily_screen_time_hours / sleep_hours` | screen against rest |
 | `age_x_screen` | `age * daily_screen_time_hours` | age interaction, product |
 | `screen_per_age` | `daily_screen_time_hours / age` | age interaction, ratio |
-| `sleep_deficit` | `8 - sleep_hours` | **control — predicted worthless** |
+| `sleep_deficit` | `8 - sleep_hours` | **control — predicted worthless, and wasn't** |
 
 `sleep_deficit` is included precisely because the argument above says it cannot
-help. It is a prediction made before running anything, and checking it tests
-the *measurement*, not the feature. What actually happened to it is the most
-interesting result in this phase — see below.
+help: it is a prediction registered before running anything. It turned out to
+be wrong, and running down *why* produced the most interesting result in this
+phase.
 
 ### Division by zero and missingness
 
@@ -146,40 +159,107 @@ staircase, and it is the one that pays.
 does not carry information about addiction here beyond what the two source
 columns already give.
 
----
-
-## The control feature did not behave as predicted, and the reason matters
-
-`sleep_deficit = 8 - sleep_hours` is provably information-free to a tree. It
-scored **0.000335** — small, but 12× its own std of 0.000028, and *larger* than
-`tracked_screen`, `age_x_screen` and four other genuine two-column features.
-
-The prediction was not wrong about the feature. It was wrong about what
-permutation importance measures. Counting actual split usage in the fitted
-fold-1 ensemble:
-
-| feature | # splits used |
-|---|---|
-| `sleep_hours` | 67 |
-| `sleep_deficit` | 35 |
-
-The two columns are perfectly redundant, so at each split the model picks one
-essentially arbitrarily, and the 102 sleep-related splits get **divided
-between them**. Permuting `sleep_deficit` then destroys the 35 splits that
-happen to reference it, and `sleep_hours` does not step in to compensate —
-the fitted trees point at specific columns, not at "the sleep information".
-
-So permutation importance answers **"how much does *this fitted model* rely on
-*this specific column*?"** — not "how much is this information worth?" With
-correlated or redundant features, a group's importance gets split across its
-members, and each member individually understates the group. This is the
-standard correlated-features caveat, and here it is visible on a feature we
-constructed to be exactly redundant.
-
-Practical consequence: **permutation importance is a ranking aid, not a
-pruning rule.** Which the next experiment confirms.
+**A caveat that the next two sections both turn on.** Permutation importance
+answers "how much does *this fitted model*, on these rows, degrade when I
+scramble *this specific column*?" It does not answer "how much is this
+information worth?", and the two come apart whenever columns are correlated —
+scrambling one column of a correlated pair creates feature combinations that
+never occur in the real data, and the model's behaviour there is not evidence
+about anything. So the table above is a **ranking aid, not a pruning rule**.
+Both experiments below were run because the table alone could not settle them.
 
 ---
+
+## The control feature was not information-free, and the reason is the splitting rule
+
+`sleep_deficit = 8 - sleep_hours` was predicted to be worthless. It scored
+**0.000335** on permutation importance — small, but 12× its own std of
+0.000028, and larger than six genuine two-column features.
+
+The first explanation I tried was the standard correlated-features caveat:
+that two redundant columns *split* a group's importance between them, so
+neither shows its true value. **That explanation is wrong here, and measuring
+it is what showed it was wrong.** If importance were merely being divided,
+removing `sleep_deficit` should push `sleep_hours` up to roughly the sum of
+the two:
+
+| model | `sleep_hours` importance | `sleep_deficit` importance | sum |
+|---|---|---|---|
+| with `sleep_deficit` | 0.000476 | 0.000327 | 0.000803 |
+| without `sleep_deficit` | 0.000520 | — | 0.000520 |
+
+`sleep_hours` barely moved. The importance was not being borrowed from it.
+
+So the control was ablated properly (run `011`, all engineered features except
+`sleep_deficit`):
+
+```
+compare 011 008 :  difference +0.00018   95% CI [+0.00015, +0.00022]  -> B is better
+```
+
+**Dropping the provably-redundant control costs real AUC.** The theoretical
+argument was simply false.
+
+### Isolating why
+
+Three variants of a duplicated `sleep_hours` column were run through full
+5-fold CV, added to the plain `histgbm` feature set:
+
+| duplicate | definition | OOF AUC | vs no duplicate | 95% CI |
+|---|---|---|---|---|
+| none | — | 0.954704 | — | — |
+| exact | `sleep_hours` | 0.954704 | **+0.000000** | [+0.000000, +0.000000] |
+| scaled | `3.7 * sleep_hours` | 0.954704 | **+0.000000** | [+0.000000, +0.000000] |
+| flipped | `8 - sleep_hours` | 0.954895 | **+0.000191** | [+0.000155, +0.000230] |
+
+An exact copy changes nothing — so it is not "having an extra column" that
+helps. A *strictly increasing* rescale also changes nothing, bit-identically —
+so it is not the numeric range, and the original argument is **correct for
+increasing transforms**. Only the *order-reversing* transform does anything.
+
+The mechanism is the split predicate itself. A tree splits with `x <= t`,
+sending the boundary group **left**. Under reversal that same boundary becomes
+`8 - x <= 8 - t`, which sends the tied group **right**. Where a threshold falls
+inside a group of equal-or-binned values, the two columns therefore express
+**different partitions**, and the original cannot produce the reversed one at
+any threshold.
+
+Ties are abundant here, because HistGradientBoosting is a *histogram* method
+that pre-quantises every column to at most 255 bins before searching for
+splits:
+
+- `sleep_hours` has **451 distinct values** but gets **255 bins**
+- of the 241 occupied bins, **144 straddle a boundary** in the other column's
+  binning — i.e. more than half of them are not interchangeable
+
+So the two columns give the model two genuinely different discretisations of
+the same underlying variable, and the extra one buys a small but real
++0.00019.
+
+A follow-up prediction — that coarser bins should amplify the effect — was
+tested and **did not hold**:
+
+| `max_bins` | without control | with control | delta |
+|---|---|---|---|
+| 16 | 0.940776 | 0.940827 | +0.000051 |
+| 32 | 0.944429 | 0.944453 | +0.000024 |
+| 64 | 0.948330 | 0.948443 | +0.000113 |
+| 128 | 0.952708 | 0.952928 | +0.000220 |
+| 255 | 0.955909 | 0.956091 | +0.000182 |
+
+The delta is non-monotonic and every value is tiny, so bin *count* is not
+cleanly the driver. Changing `max_bins` changes the entire model, not just the
+resolution on sleep, which is probably why this sweep cannot isolate anything.
+Recorded as an unresolved loose end rather than dressed up as confirmation.
+
+### What this means for the feature list
+
+The lesson is not "add reversed copies of your columns" — +0.00019 is a
+quarter of the fold noise, and doing it systematically is just a slower model.
+The lesson is that **"monotonic transforms are useless to a tree" is true for
+increasing transforms and false for decreasing ones**, and that the
+qualification only shows up once you measure a claim you were confident
+enough to write down in advance.
 
 ## Pruning to the survivors made it worse
 
@@ -246,9 +326,12 @@ it just does not happen to bite this particular well-regularised model.
 ## Reproducing
 
 ```bash
-python -m src.experiment --model histgbm_fe             # run 008
-python -m src.experiment --model histgbm_fe_pruned      # run 009
+python -m src.experiment --model histgbm_fe                 # run 008
+python -m src.experiment --model histgbm_fe_pruned          # run 009
+python -m src.experiment --model histgbm_fe_nocontrol       # run 011
 python -m src.compare 005 008
+python -m src.compare 008 009
+python -m src.compare 011 008
 python -m src.importance --model histgbm_fe --repeats 5 --n-jobs 2
 python -m src.importance --model histgbm_fe --on train --repeats 3 --n-jobs 2
 python -m src.importance --model histgbm --sample 20000 --max-leaf-nodes 512 \

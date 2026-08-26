@@ -14,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from .data import CATEGORICAL_COLS, NUMERIC_COLS
-from .features import EngineeredFeatures, engineered_numeric_cols
+from .features import ENGINEERED_COLS, EngineeredFeatures, engineered_numeric_cols
 from .preprocessing import linear_preprocessor, missingness_only_preprocessor, tree_preprocessor
 from .validation import SEED
 
@@ -141,6 +141,16 @@ def histgbm_features_pruned() -> Pipeline:
     return histgbm_features(columns=SURVIVING_FEATURES)
 
 
+def histgbm_features_no_control() -> Pipeline:
+    """All engineered features except `sleep_deficit`, the monotonic control.
+
+    Ablation for the claim that `sleep_deficit` is information-free: it carries
+    a non-zero permutation importance, so this measures whether that
+    corresponds to any actual predictive contribution.
+    """
+    return histgbm_features(columns=[c for c in ENGINEERED_COLS if c != "sleep_deficit"])
+
+
 def histgbm_native_cat() -> Pipeline:
     """Side experiment A: declare the categoricals to HistGBM natively.
 
@@ -179,5 +189,9 @@ MODELS = {
     "missingness_only": (missingness_only, "Is-missing pattern only (MNAR test)"),
     "histgbm_fe": (histgbm_features, "Phase 4: HistGBM + engineered ratios (all 15)"),
     "histgbm_fe_pruned": (histgbm_features_pruned, "Phase 4: HistGBM + 5 surviving ratios"),
+    "histgbm_fe_nocontrol": (
+        histgbm_features_no_control,
+        "Phase 4: engineered ratios minus the sleep_deficit control",
+    ),
     "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
 }
