@@ -1,0 +1,14 @@
+{
+  "params": {
+    "clf__l2_regularization": 0.06672367170464207,
+    "clf__learning_rate": 0.14447746112718687,
+    "clf__max_depth": 8,
+    "clf__max_iter": 463,
+    "clf__max_leaf_nodes": 69,
+    "clf__min_samples_leaf": 263
+  },
+  "search_rows": 250000,
+  "search_folds": 3,
+  "n_iter": 40,
+  "search_score": 0.9594222136540096
+}

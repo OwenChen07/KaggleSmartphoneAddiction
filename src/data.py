@@ -63,3 +63,33 @@ def missingness_frame(X: pd.DataFrame) -> pd.DataFrame:
     being incidental. See reports/eda.md.
     """
     return X[FEATURE_COLS].isna().astype(np.int8).add_suffix("__isna")
+
+
+EXTERNAL_PATH = (
+    DATA_DIR / "external" / "jayjoshi" / "Smartphone_Usage_And_Addiction_Analysis_7500_Rows.csv"
+)
+
+
+def load_external() -> tuple[pd.DataFrame, np.ndarray]:
+    """The original (non-synthetic) dataset the competition data was derived from.
+
+    Returns the same `FEATURE_COLS` as `load_train`, so it can be concatenated
+    to a training fold directly.
+
+    `addiction_level` is dropped and must stay dropped: it determines the
+    target exactly (Mild -> 0, Moderate and Severe -> 1), so keeping it would
+    be handing the model the answer. It is not in `FEATURE_COLS`, so this is
+    already true by construction — recorded here because it is the kind of
+    column that gets added back by someone reading the file and seeing a
+    plausible-looking feature.
+
+    `transaction_id` and `user_id` are dropped as row identifiers.
+    """
+    df = pd.read_csv(EXTERNAL_PATH)
+    missing = [c for c in FEATURE_COLS + [TARGET] if c not in df.columns]
+    if missing:
+        raise ValueError(f"external data is missing required columns: {missing}")
+    for c in NUMERIC_COLS:
+        df[c] = df[c].astype("float32")
+    y = df[TARGET].to_numpy(dtype=np.int8)
+    return df[FEATURE_COLS], y

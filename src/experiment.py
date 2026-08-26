@@ -34,7 +34,7 @@ warnings.filterwarnings(
 
 import pandas as pd  # noqa: E402
 
-from .data import load_test, load_train  # noqa: E402
+from .data import load_external, load_test, load_train  # noqa: E402
 from .models import MODELS
 from .validation import LOG_PATH, log_run, run_cv, save_oof, save_submission
 
@@ -71,6 +71,11 @@ def main() -> None:
             "Raise it only for an estimator with a known nondeterminism, and say which."
         ),
     )
+    parser.add_argument(
+        "--external",
+        action="store_true",
+        help="append the original source dataset to each fold's TRAINING rows only",
+    )
     args = parser.parse_args()
 
     if args.oof_as is not None:
@@ -87,6 +92,9 @@ def main() -> None:
 
     print("loading data...", flush=True)
     X, y = load_train(sample=args.sample)
+    extra_X, extra_y = (load_external() if args.external else (None, None))
+    if extra_X is not None:
+        print(f"external: +{len(extra_X):,} rows appended to each fold's training set only")
     X_test, test_ids = (load_test() if want_test else (None, None))
     print(f"train {X.shape}  positive rate {y.mean():.4f}", flush=True)
 
@@ -101,7 +109,9 @@ def main() -> None:
             X,
             y,
             X_test,
-            description=description,
+            extra_X=extra_X,
+            extra_y=extra_y,
+            description=description + (" + external data" if args.external else ""),
             model=name,
             n_splits=args.folds,
         )

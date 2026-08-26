@@ -101,6 +101,8 @@ def run_cv(
     y: np.ndarray,
     X_test: pd.DataFrame | None = None,
     *,
+    extra_X: pd.DataFrame | None = None,
+    extra_y: np.ndarray | None = None,
     description: str,
     model: str | None = None,
     n_splits: int = N_SPLITS,
@@ -112,7 +114,16 @@ def run_cv(
 
     The estimator is `clone`d per fold and fit only on that fold's training
     rows, so any preprocessing inside the pipeline never sees validation data.
+
+    `extra_X`/`extra_y` append additional rows — an external dataset, say — to
+    **every fold's training set only**. They never enter a validation fold, so
+    the OOF vector still covers exactly the competition rows, in the same order,
+    and stays directly comparable to every other run in the log. Putting the
+    external rows into validation instead would change what the AUC is measured
+    over and quietly break that comparability.
     """
+    if (extra_X is None) != (extra_y is None):
+        raise ValueError("pass both extra_X and extra_y, or neither")
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     oof = np.zeros(len(X), dtype=np.float64)
@@ -123,7 +134,11 @@ def run_cv(
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), start=1):
         est = clone(estimator)
-        est.fit(X.iloc[train_idx], y[train_idx])
+        X_fit, y_fit = X.iloc[train_idx], y[train_idx]
+        if extra_X is not None:
+            X_fit = pd.concat([X_fit, extra_X], axis=0, ignore_index=True)
+            y_fit = np.concatenate([y_fit, extra_y])
+        est.fit(X_fit, y_fit)
 
         if fold == 1:
             n_model_features = _count_model_features(est, X.shape[1])
