@@ -130,6 +130,80 @@ still works and the model still knows the value is unknown; the reconstruction
 arrives as an extra column it can weigh as it likes. **It gets a hint instead
 of a lie.**
 
+## The leaderboard result, and what it exposed
+
+Run `019` was submitted. Prediction recorded first, using the two-component
+model from Phase 5/7 (covariate shift +0.000912, plus the +0.001012 ensemble
+bonus measured for a single tuned model): **0.96584**.
+
+**It scored 0.96607** — a gap of −0.002157, and the prediction was low by
+0.00023.
+
+More striking is what it did to the ranking of our own models:
+
+| run | model | OOF AUC | public LB |
+|---|---|---|---|
+| `017` | seed-averaged, no imputation | **0.964060** | 0.96540 |
+| `019` | imputed, single model | 0.963913 | **0.96607** |
+
+**The rankings are inverted.** Run `017` has the better OOF score; run `019`
+is better by 0.00067 on the leaderboard. Rank 1,554 → **1,275**.
+
+### Why: OOF and the submission do not measure the same ensemble
+
+Look at how much of each OOF gain survived the trip to the leaderboard:
+
+| change | OOF gain | LB gain | transferred |
+|---|---|---|---|
+| seed averaging (`012`→`017`) | +0.00087 | +0.00029 | **33%** |
+| imputation (`012`→`019`) | +0.00072 | +0.00096 | **133%** |
+
+The asymmetry has one cause, and it is structural rather than accidental.
+
+**An OOF row is scored by exactly one model. A test row is scored by the
+average of all five fold models.** Fold-averaging is itself variance
+reduction — and it is applied to the submission but *not* to the OOF vector.
+
+Seed averaging is also variance reduction. On the OOF side it is the only
+variance reduction present, so it delivers its full effect. On the test side
+it is largely **redundant with the fold-averaging that already happens**, so
+most of its measured benefit does not exist in the submission. It is not a
+fake improvement — +0.00029 is real — but **OOF overstates it roughly
+threefold**.
+
+Imputation is a different kind of change: better inputs produce a better
+model, and that improvement is present in every fold model individually. So it
+transfers completely, and in fact slightly more than completely.
+
+### The practical consequence
+
+**OOF is the wrong selection criterion when candidate models differ in
+variance.** Ranking by OOF picked `017`; the leaderboard preferred `019`. The
+right criterion is OOF *plus the expected fold-averaging bonus*, which is
+larger for a high-variance single model than for an already-averaged one.
+
+This does not undermine the harness — every paired comparison in this project
+remains valid, because those compare like with like. It undermines one
+specific use of it: choosing between a variance-reduced model and a
+non-variance-reduced one by OOF alone.
+
+It also revises Phase 7's conclusion. Seed averaging is still a real gain, but
+at +0.00029 on the leaderboard rather than +0.00087, it is worth about a third
+of what that report claimed, and it costs 5× the compute.
+
+### A falsifiable prediction for run `020`
+
+Run `020` (imputation **and** seed averaging) has the best OOF in the project
+at **0.964709**. Two methods disagree about what it will score:
+
+| method | reasoning | predicted LB |
+|---|---|---|
+| gap decomposition | covariate shift +0.0009, ensemble bonus +0.00037 (seed-averaged, per Phase 7) → gap −0.00127 | **0.96598** |
+| transfer rate | `019`'s 0.96607 plus 33% of the +0.0008 OOF gain | **0.96633** |
+
+The first predicts run `020` scores **worse than run `019`** despite the
+better OOF. Recorded here before submitting.
+
 ## Reproducing
 
 ```bash
