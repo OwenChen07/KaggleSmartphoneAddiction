@@ -8,8 +8,11 @@ believed.
 
 - **Task:** predict `addicted_label` (binary), metric **ROC AUC**
 - **Data:** 691,369 train / 296,302 test rows; 9 numeric + 3 categorical features
-- **Best OOF AUC so far:** **0.95470** (HistGradientBoostingClassifier, 5-fold)
-- **Public LB:** **0.95578** (run `005`) — OOF-to-LB gap of **-0.00108**, stable across two submitted models
+- **Best OOF AUC:** **0.96335** (run `016`, tuned + external data) — but the
+  model of record is run **`012`** at **0.96319**, because `016`'s +0.00016 edge
+  is smaller than its own fold noise and depends on external data (see
+  [`reports/external-data.md`](reports/external-data.md))
+- **Public LB:** **0.96511** (run `012`)
 
 > Every model number below is out-of-fold cross-validation on the training set.
 > `public_lb` and `gap` in `experiments/log.csv` are filled in only after a
@@ -20,33 +23,70 @@ believed.
 
 | run | model | features | OOF AUC | public LB | gap |
 |---|---|---|---|---|---|
-| `002` | HistGBM, numeric only | 9 | 0.954677 | 0.95576 | **-0.001083** |
-| `005` | HistGBM, numeric + categorical | 12 | 0.954704 | 0.95578 | **-0.001076** |
+| `002` | HistGBM, numeric only | 9 | 0.954677 | 0.95576 | −0.001083 |
+| `005` | HistGBM, numeric + categorical | 12 | 0.954704 | 0.95578 | −0.001076 |
+| `008` | HistGBM + engineered features | 27 | 0.956091 | 0.95708 | −0.000989 |
+| `012` | **tuned** HistGBM + engineered | 27 | 0.963192 | 0.96511 | −0.001918 |
+| `017` | tuned, 5-seed average | 27 | 0.964060 | 0.96540 | −0.001340 |
+| `019` | tuned + imputed columns (augment) | 32 | 0.963913 | **0.96607** | −0.002157 |
+| `020` | imputed + 5-seed average | 32 | **0.964709** | 0.96610 | −0.001391 |
 
-Two independent models, and the gap agrees to **7 millionths of an AUC point**.
-That is the result this column exists to produce: the offset between
-cross-validation and the leaderboard is a stable property of the pipeline, not
-a per-model accident.
+**This table previously claimed the gap was "a stable property of the
+pipeline, not a per-model accident". That claim is now falsified, and the
+correction is the most useful thing on this page.**
 
-The gap is *negative* — the leaderboard scores slightly **better** than
-cross-validation — and that has a structural cause rather than being luck. Test
-predictions are the mean of all five fold models, so each test row is scored by
-a 5-model ensemble, while each OOF row is scored by the single model that did
-not train on it. Averaging five models reduces variance, so the test score
-should sit a little above OOF.
+Across the first three submissions the gap held between −0.00099 and −0.00108
+— three models, agreeing to about a ten-thousandth. Then the tuned model
+nearly doubled it, to −0.001918.
 
-Its size is also at or inside the noise. Resampling the OOF predictions at
-plausible public-split sizes puts the sampling noise of one AUC estimate at
-sd = 0.00073 for a 20% public split (±0.00146 at 2sd) and sd = 0.00047 for a
-50% split. There is no trace of the failure this tracking is meant to catch —
-OOF overstating true performance, the signature of leakage or overfitting.
+The gap has two measured components, and neither is leakage.
 
-**The harness also predicted a held-out result correctly.** The paired
-bootstrap put the categorical features' contribution at +0.00003 AUC with a 95%
-CI of `[+0.00002, +0.00004]`. Measured on the leaderboard, `005` minus `002` is
-**+0.00002** — inside the predicted interval, on data neither model ever saw.
-A CV setup that can call a three-hundred-thousandth of an AUC point on unseen
-data is measuring something real.
+**1. Fold-averaging, and it scales with model variance.** Test predictions are
+the mean of all 5 fold models; each OOF row is scored by the single model that
+did not train on it. Averaging reduces variance, so the leaderboard should sit
+*above* OOF — the gap should be negative, as it is. Measured directly on an
+80/20 same-population split, comparing on identical rows:
+
+| model | single model | 5-model average | ensemble gain |
+|---|---|---|---|
+| default (`005`) | 0.953864 | 0.954453 | +0.000590 |
+| tuned (`012`) | 0.962207 | 0.963220 | **+0.001012** |
+
+The tuned model runs 69 leaves and 463 iterations against 31 and 100. More
+capacity, more variance, more to gain from averaging — so a bigger gap. **The
+gap tracks the model's variance, not the pipeline.**
+
+**2. Covariate shift: the test set is genuinely easier.** Adversarial
+validation (Phase 5) found train and test separable at AUC 0.565, entirely
+because their *missingness rates* differ. Test has 2.55 points more
+fully-observed rows, which score 0.963, and fewer rows missing all three top
+features, which score 0.805. Reweighting the OOF rows by the adversarial
+model's density ratio predicts +0.00124 for `005` and +0.00120 for `008`.
+
+**The two components do not cleanly add**, and this is stated rather than
+smoothed over. For run `012`, +0.001012 + 0.000931 = +0.001943 against an
+observed +0.001918 — an almost exact match. For run `005`, +0.000590 +
+0.001244 = +0.001834 against an observed +0.001076 — a substantial
+over-prediction. A decomposition that works for one model and not another is
+not yet understood. The public leaderboard is also scored on an unknown subset
+of test rows, and AUC is a rank statistic that has no reason to be linear in
+the row mix.
+
+**Forward predictions, recorded before submitting.** Both submissions this
+phase had their leaderboard scores predicted in advance:
+
+| run | predicted (covariate shift) | predicted (gap holds) | actual | error |
+|---|---|---|---|---|
+| `008` | 0.95729 | 0.95717 | **0.95708** | +0.00021 / +0.00009 |
+| `012` | 0.96412 | 0.96424 | **0.96511** | −0.00099 / −0.00087 |
+
+Run `008` was called to within a ten-thousandth. Run `012` was **under**-predicted
+by ~0.0009 by both methods — which is exactly what flagged the capacity effect
+above, since both predictors assumed the old gap regime.
+
+What has not changed: at no point does OOF *overstate* leaderboard
+performance. That is the signature of leakage or overfitting, and there is
+still no trace of it.
 
 ---
 
@@ -55,21 +95,34 @@ data is measuring something real.
 Full 5-fold stratified CV on all 691,369 rows. Identical folds for every row of
 the table (`SEED = 42`), so the comparisons are paired.
 
-| model | features | OOF AUC | fold std | fit (s) |
-|---|---|---|---|---|
-| `histgbm` — HistGBM, numeric + categorical | 12 | **0.95470** | 0.00078 | 21 |
-| `histgbm_isna` — HistGBM + is-missing indicators | 21 | 0.95470 | 0.00078 | 25 |
-| `baseline` — HistGBM, numeric only (Phase 0) | 9 | 0.95468 | 0.00080 | 12 |
-| `rf` — Random forest (200 trees, leaf ≥ 50) | 12 | 0.94059 | 0.00064 | 176 |
-| `logistic` — impute + scale + one-hot | 26 | 0.91379 | 0.00077 | 6 |
-| `missingness_only` — is-missing pattern only | 12 | 0.50038 | 0.00074 | 3 |
-| `dummy` — predicts the class prior | 12 | 0.50000 | 0.00000 | 2 |
+| run | model | features | OOF AUC | fold std | fit (s) |
+|---|---|---|---|---|---|
+| `016` | tuned + external source data | 27 | 0.96335 | 0.00044 | 64 |
+| `012` | **tuned HistGBM + engineered** *(model of record)* | 27 | **0.96319** | 0.00047 | 65 |
+| `014` | tuned, search runner-up #3 | 27 | 0.96296 | 0.00051 | 69 |
+| `013` | tuned, search runner-up #2 | 27 | 0.96258 | 0.00051 | 128 |
+| `008` | HistGBM + 15 engineered features | 27 | 0.95609 | 0.00068 | 26 |
+| `009` | engineered, pruned to 5 survivors | 17 | 0.95602 | 0.00078 | 22 |
+| `011` | engineered minus the control feature | 26 | 0.95591 | 0.00072 | 23 |
+| `015` | engineered + external source data | 27 | 0.95587 | 0.00081 | 23 |
+| `005` | HistGBM, numeric + categorical | 12 | 0.95470 | 0.00078 | 21 |
+| `006` | HistGBM + is-missing indicators | 21 | 0.95470 | 0.00078 | 25 |
+| `010` | HistGBM, native categorical splits | 12 | 0.95470 | 0.00072 | 20 |
+| `002` | HistGBM, numeric only (Phase 0) | 9 | 0.95468 | 0.00080 | 12 |
+| `004` | Random forest (200 trees, leaf ≥ 50) | 12 | 0.94059 | 0.00064 | 176 |
+| `003` | Logistic regression | 26 | 0.91379 | 0.00077 | 6 |
+| `007` | is-missing pattern only | 12 | 0.50038 | 0.00074 | 3 |
+| `001` | Dummy (class prior) | 12 | 0.50000 | 0.00000 | 2 |
+
+Best blend, not a logged run: rank-average of `012`+`014` scores **0.963472**
+(+0.000281 over `012`, CI `[+0.000245, +0.000321]`).
 
 Reproduce with `python -m src.experiment --model all`.
 
-At 691k rows the fold-to-fold spread is ~0.0008, so the gap between the tree
-ensembles and logistic regression (0.041) is roughly 50× the noise floor, while
-the gap between the top three rows is well inside it.
+At 691k rows the fold-to-fold spread is 0.0005–0.0008. The gap between the tree
+ensembles and logistic regression (0.049) is ~60× that noise floor; tuning
+(+0.0071) is ~15×; the engineered features (+0.0014) are ~2×. Everything else
+in the table sits inside it.
 
 ## Method
 
@@ -101,9 +154,17 @@ positive ones.
 
 **Explicit is-missing indicators added to HistGBM: exactly zero effect.** Not
 "a small effect" — the OOF predictions were **bit-identical** (`np.array_equal`
-→ `True`, max abs difference `0.0`). Inspecting the fitted trees explains why:
-across every tree in the ensemble, the model **never once split on an indicator
-column**. HistGBM already learns a default routing direction for NaN natively,
+→ `True`, max abs difference `0.0`). Bit-identical predictions are already
+conclusive on their own: whatever the indicators did, it was nothing.
+
+> **Correction.** This section previously also claimed the model "never once
+> split on an indicator column", from walking the fitted trees' internal node
+> arrays. That introspection was later found to be misread — see
+> [`reports/native-categoricals.md`](reports/native-categoricals.md) — so the
+> split counts have been withdrawn. The bit-identical OOF vectors are
+> independent of it and stand.
+
+The mechanism is still clear: HistGBM already learns a default routing direction for NaN natively,
 so an is-missing indicator is information it has by construction and the split
 offers zero additional gain. The 9 extra columns cost 4 seconds and bought
 nothing.
@@ -123,6 +184,82 @@ gain is statistically real. It is also completely irrelevant. With 691k rows
 there is enough power to resolve differences three decimal places below
 anything that matters, which is a good demonstration that "statistically
 significant" and "worth having" are separate questions.
+
+### Phases 4–6
+
+**Pruning to the features that "survived" importance testing made it worse.**
+Permutation importance on validation rows endorsed 5 of the 15 engineered
+features and put the other 10 at or below 4e-5. Dropping those 10 cost
+**−0.00007**, CI `[-0.00011, -0.00002]` — the interval excludes zero, so the
+loss is real. Each of the ten measured ≈0 *with all the others present*;
+collectively they were worth something. Permutation importance is a ranking
+aid, not a pruning rule.
+
+**A control feature that provably could not help, helped.** `sleep_deficit =
+8 - sleep_hours` was added expressly to be worthless: a tree splits on
+`x <= t`, so a monotonic transform of one column should give the identical
+partition. Ablating it cost **+0.00018**, CI `[+0.00015, +0.00022]`. Running
+it down: an *exact* copy of `sleep_hours` changes the OOF **bit-identically**
+(CI `[0, 0]`), a `3.7×` rescale likewise, and only the order-**reversing**
+`8 − x` does anything (+0.000191). `x <= t` sends the boundary tie-group left;
+`8 − x <= 8 − t` sends it right, so where a threshold falls inside a group of
+binned or tied values the two columns express partitions the other cannot
+reach. HistGBM quantises to 255 bins and `sleep_hours` has 451 distinct
+values, so 144 of its 241 occupied bins straddle a boundary in the reversed
+column. **The original claim is true for increasing transforms and false for
+decreasing ones.**
+
+**Native categorical support: exactly nothing.** Declaring the categoricals to
+HistGBM via `categorical_features` instead of ordinal-encoding them gives OOF
+0.954704 — identical to run `005` at six decimals, CI `[-0.00002, +0.00002]`.
+Permutation importance puts all three columns at +0.000000 under ordinal
+encoding and +0.000003 under native. The encoding was never the binding
+constraint: the categoricals are worth +0.00003 in total, and removing an
+obstacle only helps if something was waiting behind it.
+
+**Every blend with a weaker model lost.** None of the 26 subsets of
+`{012, 008, 004, 005, 009}` beat the tuned model alone, and sweeping the blend
+weight climbs monotonically toward "don't blend". The partners were both
+highly rank-correlated with the tuned model (Spearman 0.985) *and* strictly
+weaker. Blending averages skill as well as errors — **diversity only pays
+among comparably strong models**. Re-measuring the search's 2nd and 3rd
+candidates as runs `013`/`014` (comparable strength, different shapes) made
+blending work: `012`+`014` gives +0.000281, CI `[+0.000245, +0.000321]`. Still
+0.59× the fold noise.
+
+**The original source dataset was not worth adding.** Found it (7,500 rows,
+exact schema match, base rate 0.7077 vs 0.7094). It has **zero** missing values
+against 4–19% in the competition data, and KS statistics of 0.24–0.26 on three
+activity columns — two orders of magnitude further from the training data than
+the *test set* is (KS ≈ 0.002). Appending it to training folds only: **−0.00023**
+on the Phase 4 model, **+0.00016** on the tuned model. Opposite signs, both
+significant, both negligible. 7,500 rows is 1.1% of 691,369.
+
+**Median imputation does not erase missingness — it encodes it.** A
+"values-only" adversarial control that median-imputed still scored 0.561
+against 0.565 for the full discriminator, because every imputed cell lands on
+exactly the median and the classifier counts the spike. Complete-case analysis
+(0.499) is what actually removes the channel. Kept as a worked example of a
+control that does not control for what it claims.
+
+**A mechanism check that produced confident nonsense.** Walking the fitted
+trees' node arrays to count splits per feature returned `age` — never declared
+categorical — with all its splits flagged `is_categorical`, and `gender` with
+none, against a correct `is_categorical_` attribute. The readings were
+misaligned. All such counts were withdrawn from the reports and replaced with
+permutation importance and ablation, which measure the model from the outside.
+An explanation resting on a measurement you cannot verify is worse than no
+explanation, because it reads as authoritative.
+
+**An unpinned dependency silently moved every number.** Regenerating run
+`005`'s OOF gave 0.954815 against a logged 0.954704. The harness was fine:
+scikit-learn 1.5.2, 1.6.1, 1.7.0 and 1.8.0 all reproduce the logged values to
+six decimals, and only **1.9.0** diverges — it changed histogram bin placement,
+so `n_bins_non_missing_` goes from `[18,255,255,255,255,255,231,166,255]` to
+`[18,254,253,246,255,242,231,166,255]` on the same data and seed. Move the bin
+edges and every candidate split moves. `requirements.txt` now pins
+`>=1.5,<1.9`. **A comparison is only paired if both sides came from the same
+environment** — fixing the seed is not enough.
 
 **Random forest: 8× the fit time of HistGBM for 0.014 less AUC.** Kept in the
 table as a measured data point rather than quietly dropped.
@@ -169,8 +306,13 @@ src/models.py         model zoo — add a function + a dict entry
 src/experiment.py     CLI runner
 src/compare.py        paired bootstrap between two logged runs
 src/eda.py            descriptive statistics -> reports/eda.md
+src/features.py       engineered features, stateless, fit inside the fold
+src/importance.py     permutation importance on validation rows
+src/adversarial.py    train-vs-test discriminator
+src/tuning.py         RandomizedSearchCV + full-data re-measurement
+src/blend.py          rank-average blending over logged runs
 experiments/log.csv   tracked record of every full-data run
-experiments/oof/      OOF vectors, row-aligned across runs
+experiments/oof/      OOF vectors, row-aligned across runs (gitignored)
 ```
 
 ```bash
@@ -178,22 +320,53 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 python -m src.experiment --model all          # full bake-off
 python -m src.experiment --model histgbm --sample 50000   # fast iteration
 python -m src.compare 002 005                 # is the difference real?
+python -m src.importance --model histgbm_fe   # what is each feature worth?
+python -m src.adversarial                     # is the train/test split clean?
+python -m src.tuning --n-iter 40 --search-rows 250000
+python -m src.blend 012 014                   # rank-average two runs
 ```
+
+`experiments/oof/` is gitignored, so a fresh clone has the log but not the
+vectors `src/compare.py` needs. Regenerate one without adding a log row:
+
+```bash
+python -m src.experiment --model histgbm --oof-as 005 --no-submission
+```
+
+It refuses to write unless the reproduced OOF AUC matches the logged value,
+which doubles as a determinism check on the environment.
 
 Sampled runs are refused entry to `experiments/log.csv` — a row in the log
 always means a full-data run.
 
 ## Next
 
-Phases 4–6 are deliberately not done yet; the harness exists so each is a
-drop-in experiment rather than a rewrite.
+- [x] Gap tracking established — and then **falsified**: the gap is not a
+      stable pipeline property, it scales with model variance
+- [x] Feature engineering — ratios/interactions, validated with
+      `permutation_importance` on validation folds (+0.0014)
+- [x] Declare categoricals natively to HistGBM (no effect)
+- [x] Adversarial validation — 0.565, entirely missingness
+- [x] `RandomizedSearchCV` tuning (+0.0071), then a `rankdata` rank-average
+      blend (+0.00028, below the noise floor)
+- [x] Test concatenating the original source dataset (negligible, sign-flips
+      by model)
+- [ ] LightGBM / XGBoost through the same harness — **not attempted**; neither
+      is in `requirements.txt` and adding a dependency was out of scope for
+      this phase
+- [ ] Resolve why the two gap components sum correctly for run `012` but
+      over-predict for run `005`
+- [ ] Sweep `max_leaf_nodes` with and without external data, to test the
+      capacity explanation for its sign flip
 
-- [x] Gap tracking established: two submissions, gaps -0.001083 and -0.001076
-- [ ] Feature engineering — ratios/interactions on the screen-time columns,
-      validated with `permutation_importance` on validation folds
-- [ ] Declare categoricals natively to HistGBM via `categorical_features`
-      rather than ordinal-encoding them
-- [ ] Adversarial validation — train/test discriminator, AUC ≈ 0.5 means a clean split
-- [ ] LightGBM / XGBoost through the same harness
-- [ ] `RandomizedSearchCV` tuning, then a `rankdata` rank-average blend
-- [ ] Test concatenating the original source dataset as an ablation
+## Reports
+
+| report | what it covers |
+|---|---|
+| [`reports/learning-notes.md`](reports/learning-notes.md) | **start here** — the concepts, explained from scratch |
+| [`reports/feature-engineering.md`](reports/feature-engineering.md) | Phase 4: which features survived and why |
+| [`reports/adversarial-validation.md`](reports/adversarial-validation.md) | Phase 5: train/test shift and what it means for OOF |
+| [`reports/tuning-and-ensembling.md`](reports/tuning-and-ensembling.md) | Phase 6: search space, winning params, blending |
+| [`reports/native-categoricals.md`](reports/native-categoricals.md) | Side experiment A |
+| [`reports/external-data.md`](reports/external-data.md) | Side experiment B |
+| [`reports/eda.md`](reports/eda.md) | descriptive statistics |

@@ -6,3 +6,16 @@ run_id,timestamp,description,model,n_features,n_model_features,n_train,oof_auc,f
 005,2026-08-13T02:01:29Z,"HistGBM, numeric + categorical",histgbm,12,12,691369,0.954704,0.954704,0.000782,21.0,0.95578,-0.001076
 006,2026-08-13T02:01:54Z,HistGBM + is-missing indicators,histgbm_isna,12,21,691369,0.954704,0.954704,0.000782,24.6,,
 007,2026-08-13T02:01:57Z,Is-missing pattern only (MNAR test),missingness_only,12,12,691369,0.500382,0.500374,0.000739,2.6,,
+008,2026-08-26T04:02:01Z,Phase 4: HistGBM + engineered ratios (all 15),histgbm_fe,12,27,691369,0.956091,0.956094,0.00068,26.1,0.95708,-0.000989
+009,2026-08-26T04:06:41Z,Phase 4: HistGBM + 5 surviving ratios,histgbm_fe_pruned,12,17,691369,0.956023,0.956025,0.000781,22.1,,
+010,2026-08-26T04:17:35Z,"HistGBM, native categorical splits",histgbm_native_cat,12,12,691369,0.954704,0.954707,0.000722,19.7,,
+011,2026-08-26T04:27:04Z,Phase 4: engineered ratios minus the sleep_deficit control,histgbm_fe_nocontrol,12,26,691369,0.955909,0.95591,0.000722,22.8,,
+012,2026-08-26T05:07:05Z,Phase 6: tuned HistGBM + engineered,histgbm_tuned,12,27,691369,0.963192,0.963193,0.000474,65.4,0.96511,-0.001918
+013,2026-08-26T05:18:11Z,"Phase 6: search runner-up #2 (depth 12, lr 0.038)",histgbm_tuned,12,27,691369,0.962583,0.962585,0.000513,128.3,,
+014,2026-08-26T05:19:23Z,"Phase 6: search runner-up #3 (depth None, lr 0.101)",histgbm_tuned,12,27,691369,0.962955,0.962958,0.000511,69.1,,
+015,2026-08-26T05:35:22Z,Phase 4: HistGBM + engineered ratios (all 15) + external data,histgbm_fe,12,27,691369,0.955865,0.955865,0.00081,23.3,,
+016,2026-08-26T05:36:28Z,Phase 6: tuned HistGBM + engineered + external data,histgbm_tuned,12,27,691369,0.963349,0.963353,0.000443,64.3,,
+017,2026-08-26T15:07:12Z,"Phase 7: tuned HistGBM, 5-seed average",histgbm_seedavg,12,12,691369,0.96406,0.964059,0.000514,332.3,0.9654,-0.00134
+018,2026-08-26T17:43:32Z,Phase 8: tuned + imputed cols (replace),histgbm_imputed,12,27,691369,0.961674,0.961673,0.000579,142.1,,
+019,2026-08-26T17:46:31Z,Phase 8: tuned + imputed cols (augment),histgbm_imputed_aug,12,32,691369,0.963913,0.963912,0.000571,175.0,0.96607,-0.002157
+020,2026-08-26T18:07:30Z,Phase 8: imputed (augment) + 5-seed average,histgbm_imputed_seedavg,12,32,691369,0.964709,0.964709,0.000517,843.5,0.9661,-0.001391
