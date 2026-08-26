@@ -21,7 +21,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from .data import CATEGORICAL_COLS, NUMERIC_COLS
-from .features import ENGINEERED_COLS, EngineeredFeatures, engineered_numeric_cols
+from .features import (
+    ENGINEERED_COLS,
+    EngineeredFeatures,
+    RecoverableImputer,
+    engineered_numeric_cols,
+    imputed_numeric_cols,
+)
 from .preprocessing import linear_preprocessor, missingness_only_preprocessor, tree_preprocessor
 from .validation import SEED
 
@@ -238,6 +244,49 @@ def histgbm_features_no_control() -> Pipeline:
     return histgbm_features(columns=[c for c in ENGINEERED_COLS if c != "sleep_deficit"])
 
 
+def histgbm_tuned_imputed(mode: str = "replace") -> Pipeline:
+    """Phase 8: reconstruct the recoverable columns, then the tuned model.
+
+    Step order matters. The imputer runs **first**, so `EngineeredFeatures`
+    downstream builds its ratios from reconstructed values rather than from
+    holes. Under `mode="replace"` that is most of the point: the ratios were
+    previously missing for 17-36% of rows because a ratio inherits the
+    missingness of both its inputs, and filling the inputs makes them
+    computable.
+    """
+    params = json.loads(
+        (Path(__file__).resolve().parents[1] / "experiments" / "best_params.json").read_text()
+    )["params"]
+    pipe = Pipeline(
+        [
+            ("impute", RecoverableImputer(mode=mode)),
+            ("feats", EngineeredFeatures()),
+            ("prep", tree_preprocessor(numeric_cols=imputed_numeric_cols(mode))),
+            ("clf", HistGradientBoostingClassifier(random_state=SEED)),
+        ]
+    )
+    pipe.set_params(**params)
+    return pipe
+
+
+def histgbm_tuned_imputed_augment() -> Pipeline:
+    return histgbm_tuned_imputed(mode="augment")
+
+
+def histgbm_imputed_seedavg() -> SeedAveraged:
+    """Phase 8 final: augment-imputed features, 5-seed averaged.
+
+    Note a known inefficiency: `SeedAveraged` clones the whole pipeline, so the
+    five imputation regressors are refit once per seed with an identical
+    `random_state` and therefore identical results. Five times the imputation
+    cost for no benefit. Left as-is because hoisting the imputer out of the
+    wrapper would move a *stateful* transformer outside the per-fold clone,
+    which is precisely the leak this project spends its effort avoiding. Wasted
+    CPU is the cheaper mistake.
+    """
+    return SeedAveraged(base=histgbm_tuned_imputed("augment"), n_seeds=5, averaging="rank")
+
+
 def histgbm_native_cat() -> Pipeline:
     """Side experiment A: declare the categoricals to HistGBM natively.
 
@@ -282,4 +331,13 @@ MODELS = {
     ),
     "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
     "histgbm_seedavg": (histgbm_tuned_seedavg, "Phase 7: tuned HistGBM, 5-seed average"),
+    "histgbm_imputed": (histgbm_tuned_imputed, "Phase 8: tuned + imputed cols (replace)"),
+    "histgbm_imputed_seedavg": (
+        histgbm_imputed_seedavg,
+        "Phase 8: imputed (augment) + 5-seed average",
+    ),
+    "histgbm_imputed_aug": (
+        histgbm_tuned_imputed_augment,
+        "Phase 8: tuned + imputed cols (augment)",
+    ),
 }

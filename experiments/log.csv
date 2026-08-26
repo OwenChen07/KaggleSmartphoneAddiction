@@ -16,3 +16,5 @@ run_id,timestamp,description,model,n_features,n_model_features,n_train,oof_auc,f
 015,2026-08-26T05:35:22Z,Phase 4: HistGBM + engineered ratios (all 15) + external data,histgbm_fe,12,27,691369,0.955865,0.955865,0.00081,23.3,,
 016,2026-08-26T05:36:28Z,Phase 6: tuned HistGBM + engineered + external data,histgbm_tuned,12,27,691369,0.963349,0.963353,0.000443,64.3,,
 017,2026-08-26T15:07:12Z,"Phase 7: tuned HistGBM, 5-seed average",histgbm_seedavg,12,12,691369,0.96406,0.964059,0.000514,332.3,0.9654,-0.00134
+018,2026-08-26T17:43:32Z,Phase 8: tuned + imputed cols (replace),histgbm_imputed,12,27,691369,0.961674,0.961673,0.000579,142.1,,
+019,2026-08-26T17:46:31Z,Phase 8: tuned + imputed cols (augment),histgbm_imputed_aug,12,32,691369,0.963913,0.963912,0.000571,175.0,,
