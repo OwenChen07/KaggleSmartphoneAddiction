@@ -13,7 +13,8 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from .data import NUMERIC_COLS
+from .data import CATEGORICAL_COLS, NUMERIC_COLS
+from .features import EngineeredFeatures, engineered_numeric_cols
 from .preprocessing import linear_preprocessor, missingness_only_preprocessor, tree_preprocessor
 from .validation import SEED
 
@@ -103,6 +104,71 @@ def missingness_only() -> Pipeline:
     )
 
 
+def histgbm_features(columns: list[str] | None = None) -> Pipeline:
+    """Phase 4: HistGBM on the raw columns plus engineered ratios.
+
+    `EngineeredFeatures` sits *inside* the Pipeline, ahead of the
+    ColumnTransformer, so it is cloned and fit per fold like every other step.
+    It is stateless, so that placement changes nothing numerically — but it
+    keeps the rule ("all preprocessing inside the pipeline") true by
+    construction rather than by argument, which is what matters when a later
+    feature does need to learn something.
+    """
+    return Pipeline(
+        [
+            ("feats", EngineeredFeatures(columns=columns)),
+            ("prep", tree_preprocessor(numeric_cols=engineered_numeric_cols(columns))),
+            ("clf", HistGradientBoostingClassifier(random_state=SEED)),
+        ]
+    )
+
+
+#: Engineered features whose permutation importance on held-out rows was
+#: clearly above its own repeat-to-repeat spread. Measured on fold 1, full
+#: data, 5 repeats — see reports/feature-engineering.md for the full table.
+SURVIVING_FEATURES = [
+    "social_share",
+    "work_share",
+    "gaming_share",
+    "residual_screen",
+    "weekend_ratio",
+]
+
+
+def histgbm_features_pruned() -> Pipeline:
+    """Phase 4, pruned to the five engineered features that survived
+    permutation importance on validation rows."""
+    return histgbm_features(columns=SURVIVING_FEATURES)
+
+
+def histgbm_native_cat() -> Pipeline:
+    """Side experiment A: declare the categoricals to HistGBM natively.
+
+    The ordinal encoding used everywhere else imposes an order the categories
+    do not have — `gender` becomes Female=0 < Male=1 < Other=2, and a tree can
+    then only cut that axis into contiguous ranges, so {Female, Other} versus
+    {Male} costs two splits instead of one. `categorical_features` lets the
+    split finder partition the levels as an unordered set instead.
+
+    The encoder still runs: HistGBM wants small non-negative integer codes, not
+    strings. What changes is that the estimator is told which columns those
+    codes describe, so it stops treating them as ordered magnitudes.
+    """
+    n_numeric = len(NUMERIC_COLS)
+    categorical_mask = [False] * n_numeric + [True] * len(CATEGORICAL_COLS)
+    return Pipeline(
+        [
+            ("prep", tree_preprocessor()),
+            (
+                "clf",
+                HistGradientBoostingClassifier(
+                    categorical_features=categorical_mask, random_state=SEED
+                ),
+            ),
+        ]
+    )
+
+
 MODELS = {
     "dummy": (dummy, "Dummy (prior) — harness sanity check"),
     "baseline": (baseline_histgbm_numeric, "Phase 0: HistGBM, numeric cols only"),
@@ -111,4 +177,7 @@ MODELS = {
     "histgbm": (histgbm, "HistGBM, numeric + categorical"),
     "histgbm_isna": (histgbm_isna, "HistGBM + is-missing indicators"),
     "missingness_only": (missingness_only, "Is-missing pattern only (MNAR test)"),
+    "histgbm_fe": (histgbm_features, "Phase 4: HistGBM + engineered ratios (all 15)"),
+    "histgbm_fe_pruned": (histgbm_features_pruned, "Phase 4: HistGBM + 5 surviving ratios"),
+    "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
 }
