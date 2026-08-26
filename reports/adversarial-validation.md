@@ -44,8 +44,9 @@ combined, test share 0.3000.
 
 The missingness pattern **alone** reproduces the full separation (0.565382 vs
 0.565161 — the missingness-only model is, if anything, marginally better).
-Restricted to the 25.9% of rows with nothing missing anywhere, the
-discriminator collapses to **0.499160**, indistinguishable from chance.
+Restricted to the 38.7% of rows with nothing missing anywhere (382,289 of
+987,671), the discriminator collapses to **0.499160**, indistinguishable from
+chance.
 
 The median-imputed row is a **failed** attempt at a values-only control, kept
 because the failure is instructive: median imputation does not erase

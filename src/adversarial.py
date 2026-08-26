@@ -82,7 +82,7 @@ def adversarial_pipeline(with_features: bool = False, mode: str = "full") -> Pip
                      there. Kept because that failure is worth seeing.
     - `complete`   — keep only rows with no missing value anywhere, which
                      removes the missingness channel by construction at the
-                     cost of ~74% of the rows.
+                     cost of ~61% of the rows (38.7% survive).
 
     Running these splits the total separation into the part carried by the
     numbers and the part carried by which numbers are absent.
