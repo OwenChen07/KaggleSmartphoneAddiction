@@ -9,11 +9,33 @@ believed.
 - **Task:** predict `addicted_label` (binary), metric **ROC AUC**
 - **Data:** 691,369 train / 296,302 test rows; 9 numeric + 3 categorical features
 - **Best OOF AUC so far:** **0.95470** (HistGradientBoostingClassifier, 5-fold)
+- **First public LB score:** **0.95578** (run `005`) — an OOF-to-LB gap of **-0.00108**
 
-> **Status: not yet submitted to Kaggle.** Every number below is out-of-fold
-> cross-validation on the training set. The `public_lb` and `gap` columns in
-> `experiments/log.csv` are deliberately empty until a submission has actually
-> scored. Nothing here is projected.
+> Every model number below is out-of-fold cross-validation on the training set.
+> `public_lb` and `gap` in `experiments/log.csv` are filled in only after a
+> submission has actually scored; rows without a submission stay blank. Nothing
+> here is projected.
+
+### The gap so far
+
+| run | model | OOF AUC | public LB | gap |
+|---|---|---|---|---|
+| `005` | HistGBM, numeric + categorical | 0.954704 | 0.95578 | **-0.00108** |
+
+The gap is *negative* — the leaderboard scores slightly **better** than
+cross-validation. That is the direction you want, and it has a structural
+cause rather than being luck: test predictions are the mean of all five fold
+models, so each test row is scored by a 5-model ensemble, while each OOF row is
+scored by the single model that did not train on it. Averaging five models
+reduces variance, so the test score should sit a little above OOF.
+
+Whether -0.00108 is even distinguishable from noise depends on how much of the
+296,302-row test set is in the public split. Resampling the OOF predictions at
+plausible split sizes puts the sampling noise of a single AUC estimate at
+sd = 0.00073 for a 20% public split (±0.00146 at 2sd) and sd = 0.00047 for a
+50% split (±0.00093). So at 20% the gap is inside the noise band entirely; at
+50% it is marginally outside it. Either way there is no sign of the failure
+this column exists to detect — OOF badly overstating true performance.
 
 ---
 
@@ -155,7 +177,7 @@ always means a full-data run.
 Phases 4–6 are deliberately not done yet; the harness exists so each is a
 drop-in experiment rather than a rewrite.
 
-- [ ] Submit and start recording the OOF-to-LB gap (the `gap` column exists and is empty)
+- [x] First submission recorded (run `005`, gap -0.00108); more runs needed before the gap is a trend rather than a point
 - [ ] Feature engineering — ratios/interactions on the screen-time columns,
       validated with `permutation_importance` on validation folds
 - [ ] Declare categoricals natively to HistGBM via `categorical_features`
