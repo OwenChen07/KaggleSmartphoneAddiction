@@ -28,7 +28,8 @@ believed.
 | `008` | HistGBM + engineered features | 27 | 0.956091 | 0.95708 | −0.000989 |
 | `012` | **tuned** HistGBM + engineered | 27 | 0.963192 | 0.96511 | −0.001918 |
 | `017` | tuned, 5-seed average | 27 | 0.964060 | 0.96540 | −0.001340 |
-| `019` | tuned + imputed columns (augment) | 32 | 0.963913 | **0.96607** | **−0.002157** |
+| `019` | tuned + imputed columns (augment) | 32 | 0.963913 | **0.96607** | −0.002157 |
+| `020` | imputed + 5-seed average | 32 | **0.964709** | 0.96610 | −0.001391 |
 
 **This table previously claimed the gap was "a stable property of the
 pipeline, not a per-model accident". That claim is now falsified, and the

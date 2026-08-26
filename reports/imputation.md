@@ -204,6 +204,51 @@ at **0.964709**. Two methods disagree about what it will score:
 The first predicts run `020` scores **worse than run `019`** despite the
 better OOF. Recorded here before submitting.
 
+### Outcome: 0.96610
+
+| prediction | value | error |
+|---|---|---|
+| gap decomposition | 0.96598 | **−0.00012** |
+| transfer rate | 0.96633 | +0.00023 |
+| **actual** | **0.96610** | — |
+
+The gap decomposition was closer, and its *magnitude* claim was right — run
+`020` barely moved. Its *directional* claim was wrong: `020` edged `019` out
+rather than falling behind it, by **+0.00003**.
+
+That margin is the point. Run `020` has a **+0.00080** OOF advantage over run
+`019` and converts it into **+0.00003** on the leaderboard — a transfer rate of
+**4%**, for **4.8× the training time** (844s against 175s).
+
+| change | OOF gain | LB gain | transferred |
+|---|---|---|---|
+| seed averaging (`012`→`017`) | +0.00087 | +0.00029 | 33% |
+| imputation (`012`→`019`) | +0.00072 | +0.00096 | **133%** |
+| seed averaging on imputed (`019`→`020`) | +0.00080 | +0.00003 | **4%** |
+
+Two independent measurements of seed averaging, 33% and 4%, both far below
+100%; one measurement of imputation, above 100%. The mechanism predicted this:
+fold-averaging already supplies variance reduction to the submission but not to
+the OOF vector, so a second dose of variance reduction inflates OOF far more
+than it improves the leaderboard.
+
+**Honest limit on the precision.** Sampling noise on a single public-LB AUC is
+roughly 0.0007 at this split size, so *individually* the +0.00029 and +0.00003
+LB gains are both inside the noise — neither would be convincing alone. What
+carries the claim is that two independent measurements and a mechanical
+argument all point the same way, and that the imputation transfer went the
+other way under identical conditions.
+
+### The practical answer
+
+Runs `019` and `020` are **indistinguishable on the leaderboard** (0.96607 vs
+0.96610, rank 1,275 vs 1,256, a difference far inside LB noise). Run `019`
+trains in a fifth of the time.
+
+**Run `019` is the better model to carry forward.** Seed averaging earns its
+place when the OOF number is the deliverable; it is close to worthless when the
+deliverable is a fold-averaged submission.
+
 ## Reproducing
 
 ```bash
