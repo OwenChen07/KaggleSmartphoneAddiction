@@ -1,6 +1,23 @@
 pandas>=2.0
 numpy>=1.24
-scikit-learn>=1.4
+# Upper bound is deliberate and load-bearing, not caution.
+#
+# scikit-learn 1.9.0 changed how HistGradientBoosting computes its histogram
+# bin edges: on this data _BinMapper drops from 255 non-missing bins to
+# [254, 253, 246, 242] on four of the nine numeric columns, same seed and same
+# rows. Different bin edges mean different candidate split points, so every
+# tree in the ensemble changes. Measured effect on run 005: OOF AUC 0.954704
+# under 1.5.2-1.8.0 (all four reproduce it to six decimals) versus 0.954815
+# under 1.9.0 — 0.00011, which is larger than several of the differences this
+# project is trying to resolve.
+#
+# Every row in experiments/log.csv was produced under the older binning. Since
+# the whole method here is paired comparison against those OOF vectors, mixing
+# binning regimes inside one log would silently confound every comparison.
+# Pinned below 1.9 so the log stays internally comparable. Re-baselining onto
+# 1.9 is a legitimate alternative — it just means re-running every logged row,
+# not appending to them.
+scikit-learn>=1.5,<1.9
 matplotlib>=3.7
 tabulate>=0.9
 kaggle>=1.6
