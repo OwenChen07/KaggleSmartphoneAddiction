@@ -18,6 +18,14 @@ numpy>=1.24
 # 1.9 is a legitimate alternative — it just means re-running every logged row,
 # not appending to them.
 scikit-learn>=1.5,<1.9
+# CatBoost is here for one specific capability, not as a second opinion.
+# Its ordered target statistics compute the encoding that Phase 9 showed is
+# worth +0.0039 on this data, but with per-row adaptive shrinkage rather than
+# the single smoothing constant src/encoding.py applies to every level. Handing
+# it the raw string levels as `cat_features` lets the estimator build those
+# statistics itself. See reports/catboost.md.
+catboost>=1.2
+
 matplotlib>=3.7
 tabulate>=0.9
 kaggle>=1.6
