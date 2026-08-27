@@ -19,3 +19,5 @@ run_id,timestamp,description,model,n_features,n_model_features,n_train,oof_auc,f
 018,2026-08-26T17:43:32Z,Phase 8: tuned + imputed cols (replace),histgbm_imputed,12,27,691369,0.961674,0.961673,0.000579,142.1,,
 019,2026-08-26T17:46:31Z,Phase 8: tuned + imputed cols (augment),histgbm_imputed_aug,12,32,691369,0.963913,0.963912,0.000571,175.0,0.96607,-0.002157
 020,2026-08-26T18:07:30Z,Phase 8: imputed (augment) + 5-seed average,histgbm_imputed_seedavg,12,32,691369,0.964709,0.964709,0.000517,843.5,0.9661,-0.001391
+021,2026-08-27T00:35:34Z,Phase 9: lookup-key target encoding,histgbm_encoded,12,64,691369,0.96713,0.967131,0.000521,233.6,,
+022,2026-08-27T14:37:23Z,Phase 9: target encoding + lattice + imputation,histgbm_encoded_full,12,69,691369,0.967257,0.967259,0.000458,236.7,,

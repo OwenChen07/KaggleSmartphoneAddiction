@@ -21,9 +21,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from .data import CATEGORICAL_COLS, NUMERIC_COLS
+from .encoding import ENCODE_COLS, TargetFrequencyEncoder, encoded_numeric_cols
 from .features import (
     ENGINEERED_COLS,
+    RECOVERABLE_COLS,
+    GENERATOR_COLS,
     EngineeredFeatures,
+    GeneratorFeatures,
     RecoverableImputer,
     engineered_numeric_cols,
     imputed_numeric_cols,
@@ -287,6 +291,46 @@ def histgbm_imputed_seedavg() -> SeedAveraged:
     return SeedAveraged(base=histgbm_tuned_imputed("augment"), n_seeds=5, averaging="rank")
 
 
+def histgbm_encoded(
+    impute: bool = False, lattice: bool = True, encode: bool = True
+) -> Pipeline:
+    """Phase 9: the lookup-key representation.
+
+    Step order is deliberate. The engineered ratios and generator features are
+    appended first; the target encoder then runs on the **raw** twelve columns
+    only, so the encoded block describes the original lookup keys rather than
+    derived quantities. `TargetFrequencyEncoder` overrides `fit_transform`, so
+    Pipeline gives the training rows inner out-of-fold encodings during `fit`
+    and the full-fit statistics during `predict` — automatically, and in the
+    right direction each time.
+    """
+    params = json.loads(
+        (Path(__file__).resolve().parents[1] / "experiments" / "best_params.json").read_text()
+    )["params"]
+    steps = []
+    numeric = list(NUMERIC_COLS)
+    if impute:
+        steps.append(("impute", RecoverableImputer(mode="augment")))
+        numeric = [*numeric, *[f"{c}__imp" for c in RECOVERABLE_COLS]]
+    steps.append(("feats", EngineeredFeatures()))
+    numeric = [*numeric, *ENGINEERED_COLS]
+    if lattice:
+        steps.append(("gen", GeneratorFeatures()))
+        numeric = [*numeric, *GENERATOR_COLS]
+    if encode:
+        steps.append(("enc", TargetFrequencyEncoder()))
+        numeric = encoded_numeric_cols(numeric)
+    steps.append(("prep", tree_preprocessor(numeric_cols=numeric)))
+    steps.append(("clf", HistGradientBoostingClassifier(random_state=SEED)))
+    pipe = Pipeline(steps)
+    pipe.set_params(**params)
+    return pipe
+
+
+def histgbm_encoded_full() -> Pipeline:
+    return histgbm_encoded(impute=True, lattice=True, encode=True)
+
+
 def histgbm_native_cat() -> Pipeline:
     """Side experiment A: declare the categoricals to HistGBM natively.
 
@@ -332,6 +376,11 @@ MODELS = {
     "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
     "histgbm_seedavg": (histgbm_tuned_seedavg, "Phase 7: tuned HistGBM, 5-seed average"),
     "histgbm_imputed": (histgbm_tuned_imputed, "Phase 8: tuned + imputed cols (replace)"),
+    "histgbm_encoded": (histgbm_encoded, "Phase 9: lookup-key target encoding"),
+    "histgbm_encoded_full": (
+        histgbm_encoded_full,
+        "Phase 9: target encoding + lattice + imputation",
+    ),
     "histgbm_imputed_seedavg": (
         histgbm_imputed_seedavg,
         "Phase 8: imputed (augment) + 5-seed average",
