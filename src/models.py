@@ -331,6 +331,13 @@ def histgbm_encoded_full() -> Pipeline:
     return histgbm_encoded(impute=True, lattice=True, encode=True)
 
 
+def _catboost_lookup():
+    """Imported lazily so the zoo still loads if catboost is not installed."""
+    from .catboost_model import catboost_lookup
+
+    return catboost_lookup()
+
+
 def histgbm_native_cat() -> Pipeline:
     """Side experiment A: declare the categoricals to HistGBM natively.
 
@@ -376,6 +383,10 @@ MODELS = {
     "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
     "histgbm_seedavg": (histgbm_tuned_seedavg, "Phase 7: tuned HistGBM, 5-seed average"),
     "histgbm_imputed": (histgbm_tuned_imputed, "Phase 8: tuned + imputed cols (replace)"),
+    "catboost_lookup": (
+        _catboost_lookup,
+        "Phase 11: CatBoost, ordered target statistics on raw levels",
+    ),
     "histgbm_encoded": (histgbm_encoded, "Phase 9: lookup-key target encoding"),
     "histgbm_encoded_full": (
         histgbm_encoded_full,

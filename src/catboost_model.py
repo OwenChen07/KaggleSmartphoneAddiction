@@ -94,6 +94,7 @@ class CatBoostLookup(BaseEstimator, ClassifierMixin):
         frame, cat_idx = self._frame(X)
         self.classes_ = np.unique(y)
         self.cat_idx_ = cat_idx
+        self.n_features_out_ = frame.shape[1]
         params = {**CAT_DEFAULTS, **(self.params or {})}
         self.model_ = CatBoostClassifier(**params)
         self.model_.fit(frame, np.asarray(y), cat_features=cat_idx)
@@ -108,4 +109,12 @@ class CatBoostLookup(BaseEstimator, ClassifierMixin):
 
 
 def catboost_lookup() -> CatBoostLookup:
-    return CatBoostLookup()
+    """Operating point chosen by measurement on fold 1, not by default.
+
+    300 iterations at lr 0.15 already reached 0.966634 against the re-tuned
+    HistGBM's 0.96681; 1200 at lr 0.06 reached 0.967118, beating it by
+    +0.00031 for 801s per fold. Going further costs linearly and the curve is
+    flattening, so this is the point where more compute stops paying.
+    """
+    return CatBoostLookup(params=dict(iterations=1200, learning_rate=0.06,
+                                      depth=8, thread_count=4))
