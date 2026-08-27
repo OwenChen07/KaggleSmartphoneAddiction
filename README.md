@@ -8,11 +8,8 @@ believed.
 
 - **Task:** predict `addicted_label` (binary), metric **ROC AUC**
 - **Data:** 691,369 train / 296,302 test rows; 9 numeric + 3 categorical features
-- **Best OOF AUC:** **0.96335** (run `016`, tuned + external data) — but the
-  model of record is run **`012`** at **0.96319**, because `016`'s +0.00016 edge
-  is smaller than its own fold noise and depends on external data (see
-  [`reports/external-data.md`](reports/external-data.md))
-- **Public LB:** **0.96511** (run `012`)
+- **Best OOF AUC:** **0.96726** (run `022` — target encoding + decimal lattice + imputation)
+- **Public LB:** **0.96905** (run `022`), rank **827 of 2,982**
 
 > Every model number below is out-of-fold cross-validation on the training set.
 > `public_lb` and `gap` in `experiments/log.csv` are filled in only after a
@@ -29,7 +26,8 @@ believed.
 | `012` | **tuned** HistGBM + engineered | 27 | 0.963192 | 0.96511 | −0.001918 |
 | `017` | tuned, 5-seed average | 27 | 0.964060 | 0.96540 | −0.001340 |
 | `019` | tuned + imputed columns (augment) | 32 | 0.963913 | **0.96607** | −0.002157 |
-| `020` | imputed + 5-seed average | 32 | **0.964709** | 0.96610 | −0.001391 |
+| `020` | imputed + 5-seed average | 32 | 0.964709 | 0.96610 | −0.001391 |
+| `022` | **target encoding + lattice + imputation** | 69 | **0.967257** | **0.96905** | −0.001793 |
 
 **This table previously claimed the gap was "a stable property of the
 pipeline, not a per-model accident". That claim is now falsified, and the

@@ -171,6 +171,26 @@ fold-averaging bonus measured for a single tuned model):
 If either lands near its prediction, the encoding is clean. If the LB comes in
 far below, the CV is inflated and the nesting has a hole.
 
+### Outcome: 0.96905
+
+Run `022` was submitted. **It scored 0.96905 against a prediction of
+0.96917 — an error of −0.00012**, and a gap of −0.001793, squarely inside the
+−0.00099 to −0.00216 range the other seven submissions have produced.
+
+**There is no CV/LB divergence, so the encoding is clean on held-out data.**
+That is the test that mattered: a leaky encoder inflates CV specifically, so
+it shows up as the leaderboard falling far short of a gap-based prediction,
+not as a uniformly poor score. The prediction was made from an offset
+calibrated on runs that contain no target encoding at all, and it held.
+
+**Rank 1,256 → 827 of 2,982.**
+
+| run | OOF | public LB | gap | rank |
+|---|---|---|---|---|
+| `012` | 0.963192 | 0.96511 | −0.001918 | 1,678 |
+| `020` | 0.964709 | 0.96610 | −0.001391 | 1,256 |
+| `022` | **0.967257** | **0.96905** | −0.001793 | **827** |
+
 ## Reproducing
 
 ```bash
