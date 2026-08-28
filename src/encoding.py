@@ -118,12 +118,14 @@ class TargetFrequencyEncoder(BaseEstimator, TransformerMixin):
         inner_splits: int = 5,
         seed: int = SEED,
         add_frequency: bool = True,
+        freq_frame: pd.DataFrame | None = None,
     ):
         self.columns = columns
         self.smooth = smooth
         self.inner_splits = inner_splits
         self.seed = seed
         self.add_frequency = add_frequency
+        self.freq_frame = freq_frame
 
     def _cols(self) -> list[str]:
         return ENCODE_COLS if self.columns is None else list(self.columns)
@@ -137,10 +139,37 @@ class TargetFrequencyEncoder(BaseEstimator, TransformerMixin):
             lv = levels[c]
             out[f"te_{c}"] = lv.map(sm).astype(np.float32).fillna(np.float32(prior))
             if self.add_frequency:
+                # Transductive counts when a reference frame was supplied,
+                # otherwise the counts from whatever this encoder was fit on.
+                counts = self.freq_counts_[c] if self.freq_counts_ is not None else st["count"]
+                denom = self.freq_n_ if self.freq_counts_ is not None else n_ref
                 out[f"fq_{c}"] = (
-                    lv.map(st["count"]).astype(np.float32).fillna(np.float32(0.0)) / n_ref
+                    lv.map(counts).astype(np.float32).fillna(np.float32(0.0)) / denom
                 )
         return pd.DataFrame(out, index=levels.index)
+
+    def _fit_freq(self) -> None:
+        """Level counts for the frequency block.
+
+        `freq_frame` is the **transductive** option: counts taken over train
+        *and* test rows rather than the training fold alone. That is
+        legitimate, and the distinction is worth being precise about — test
+        *features* are handed to us at prediction time and only test *labels*
+        are hidden. Counting how often a value occurs uses no labels, so it
+        leaks nothing, and 987,671 rows estimate "how common is this value"
+        strictly better than the ~553,000 in a training fold.
+
+        **The target encoding stays fold-based and nested.** That one does use
+        labels and must never see a row it will score. Only the counts change.
+        """
+        if self.freq_frame is None:
+            self.freq_counts_ = None
+            self.freq_n_ = None
+            return
+        ref = level_frame(pd.DataFrame(self.freq_frame), self._cols())
+        assert_full_coverage(ref)
+        self.freq_counts_ = {c: ref[c].value_counts() for c in self._cols()}
+        self.freq_n_ = len(ref)
 
     def fit(self, X: pd.DataFrame, y=None):
         if y is None:
@@ -150,6 +179,7 @@ class TargetFrequencyEncoder(BaseEstimator, TransformerMixin):
         assert_full_coverage(levels)
         self.prior_ = float(y.mean())
         self.n_fit_ = len(X)
+        self._fit_freq()
         self.stats_ = {c: _stats(levels[c], y) for c in self._cols()}
         return self
 

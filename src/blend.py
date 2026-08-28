@@ -39,6 +39,7 @@ from sklearn.metrics import roc_auc_score  # noqa: E402
 from .data import load_train  # noqa: E402
 from .validation import (  # noqa: E402
     LOG_PATH,
+    SEED,
     SUBMISSION_DIR,
     bootstrap_auc_diff,
     load_oof,
@@ -60,6 +61,61 @@ def rank_average(vectors: list[np.ndarray], weights: list[float] | None = None) 
     for v, w in zip(vectors, weights):
         stacked += (w / total) * rank_normalise(v)
     return stacked
+
+
+def to_logit(p: np.ndarray, clip: float = 30.0) -> np.ndarray:
+    """Map probabilities to the log-odds scale, clipped.
+
+    This target saturates hard — the top screen-time decile is essentially all
+    positive — and in that region probabilities have no resolution left while
+    logits still do. Two models that both say 0.999 may disagree by a lot in
+    log-odds, and a combiner working on probabilities cannot see it.
+    """
+    p = np.clip(np.asarray(p, dtype=np.float64), 1e-15, 1 - 1e-15)
+    return np.clip(np.log(p / (1 - p)), -clip, clip)
+
+
+def logit_stack_score(
+    y: np.ndarray, oofs: list[np.ndarray], n_splits: int = 5, seed: int = SEED
+) -> dict[str, float]:
+    """Honest score for a logistic-regression stacker over OOF logits.
+
+    **A stacker fit on the OOF matrix and scored on the same rows reads high**,
+    because the coefficients were chosen using those labels. So the combiner is
+    fit on half the OOF rows and scored on the held-out half, repeated over
+    `n_splits` shuffles, and the mean reported. The equal-weight rank average
+    is scored on the *same* held-out halves so the comparison is paired.
+
+    The reason to prefer this over `rank_average` is one degree of freedom:
+    a rank average weights every member positively by construction, while a
+    stacker can give a member a **negative** coefficient. A weak,
+    decorrelated model is often useful as a correction rather than as
+    something to average in, and only the stacker can express that.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import StratifiedShuffleSplit
+
+    Z = np.column_stack([to_logit(o) for o in oofs])
+    R = np.column_stack([rank_normalise(o) for o in oofs])
+    splitter = StratifiedShuffleSplit(
+        n_splits=n_splits, train_size=0.5, random_state=seed
+    )
+    stack, plain, coefs = [], [], []
+    for fit_idx, score_idx in splitter.split(Z, y):
+        lr = LogisticRegression(max_iter=1000, C=1.0)
+        lr.fit(Z[fit_idx], y[fit_idx])
+        stack.append(roc_auc_score(y[score_idx], lr.decision_function(Z[score_idx])))
+        plain.append(roc_auc_score(y[score_idx], R[score_idx].mean(axis=1)))
+        coefs.append(lr.coef_[0])
+    stack, plain = np.array(stack), np.array(plain)
+    return {
+        "logit_stack": float(stack.mean()),
+        "rank_average": float(plain.mean()),
+        "diff": float((stack - plain).mean()),
+        "diff_sd": float((stack - plain).std()),
+        "coefs": np.mean(coefs, axis=0).tolist(),
+        "n_splits": n_splits,
+    }
 
 
 def _log() -> pd.DataFrame:
@@ -91,6 +147,11 @@ def main() -> None:
     parser.add_argument("--all-subsets", action="store_true", help="score every subset of >=2 runs")
     parser.add_argument("--submit", action="store_true", help="write submissions/blend_<ids>.csv")
     parser.add_argument("--n-boot", type=int, default=500)
+    parser.add_argument(
+        "--logit-stack",
+        action="store_true",
+        help="compare a logistic stacker on OOF logits against the equal-weight rank average",
+    )
     args = parser.parse_args()
 
     _, y = load_train()
@@ -116,6 +177,18 @@ def main() -> None:
         print("-" * 54)
         for name, auc in rows:
             print(f"{name:<28}{auc:>10.6f}{auc - base:>+16.6f}")
+        return
+
+    if args.logit_stack:
+        res = logit_stack_score(y, [oofs[r] for r in args.runs])
+        print(f"\nhonest comparison over {res['n_splits']} half-splits "
+              f"(combiner fit on one half, scored on the other)\n")
+        print(f"  equal-weight rank average  {res['rank_average']:.6f}")
+        print(f"  logistic stack on logits   {res['logit_stack']:.6f}")
+        print(f"  difference                 {res['diff']:+.6f}  (sd {res['diff_sd']:.6f})")
+        print("\n  stacker coefficients (negative = used as a correction):")
+        for r, c in zip(args.runs, res["coefs"]):
+            print(f"    {r} ({describe(r)}): {c:+.4f}")
         return
 
     blended = rank_average([oofs[r] for r in args.runs], args.weights)
