@@ -15,6 +15,7 @@ import json
 import numpy as np
 from scipy.stats import rankdata
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
+import pandas as pd
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -26,8 +27,10 @@ from .features import (
     ENGINEERED_COLS,
     RECOVERABLE_COLS,
     GENERATOR_COLS,
+    TRIG_COLS,
     EngineeredFeatures,
     GeneratorFeatures,
+    LookupTrig,
     RecoverableImputer,
     engineered_numeric_cols,
     imputed_numeric_cols,
@@ -292,7 +295,13 @@ def histgbm_imputed_seedavg() -> SeedAveraged:
 
 
 def histgbm_encoded(
-    impute: bool = False, lattice: bool = True, encode: bool = True
+    impute: bool = False,
+    lattice: bool = True,
+    encode: bool = True,
+    trig: bool = False,
+    transductive: bool = False,
+    inner_splits: int = 5,
+    params_path: str = "best_params.json",
 ) -> Pipeline:
     """Phase 9: the lookup-key representation.
 
@@ -305,7 +314,7 @@ def histgbm_encoded(
     right direction each time.
     """
     params = json.loads(
-        (Path(__file__).resolve().parents[1] / "experiments" / "best_params.json").read_text()
+        (Path(__file__).resolve().parents[1] / "experiments" / params_path).read_text()
     )["params"]
     steps = []
     numeric = list(NUMERIC_COLS)
@@ -317,8 +326,23 @@ def histgbm_encoded(
     if lattice:
         steps.append(("gen", GeneratorFeatures()))
         numeric = [*numeric, *GENERATOR_COLS]
+    if trig:
+        steps.append(("trig", LookupTrig()))
+        numeric = [*numeric, *TRIG_COLS]
     if encode:
-        steps.append(("enc", TargetFrequencyEncoder()))
+        freq_frame = None
+        if transductive:
+            # Feature rows only, from train and test. No labels are involved,
+            # so this leaks nothing; see TargetFrequencyEncoder._fit_freq.
+            from .data import FEATURE_COLS, load_test, load_train
+
+            Xtr, _ = load_train()
+            Xte, _ = load_test()
+            freq_frame = pd.concat([Xtr[FEATURE_COLS], Xte[FEATURE_COLS]], ignore_index=True)
+        steps.append((
+            "enc",
+            TargetFrequencyEncoder(inner_splits=inner_splits, freq_frame=freq_frame),
+        ))
         numeric = encoded_numeric_cols(numeric)
     steps.append(("prep", tree_preprocessor(numeric_cols=numeric)))
     steps.append(("clf", HistGradientBoostingClassifier(random_state=SEED)))
@@ -329,6 +353,17 @@ def histgbm_encoded(
 
 def histgbm_encoded_full() -> Pipeline:
     return histgbm_encoded(impute=True, lattice=True, encode=True)
+
+
+def histgbm_encoded_v2() -> Pipeline:
+    """Phase 12: the four levers from reports/remaining-levers.md at once —
+    transductive frequency counts, ten encoding folds, trig on the lookup
+    columns, and the re-tuned parameters from Phase 10."""
+    return histgbm_encoded(
+        impute=True, lattice=True, encode=True, trig=True,
+        transductive=True, inner_splits=10,
+        params_path="best_params_encoded.json",
+    )
 
 
 def _catboost_lookup():
@@ -388,6 +423,10 @@ MODELS = {
         "Phase 11: CatBoost, ordered target statistics on raw levels",
     ),
     "histgbm_encoded": (histgbm_encoded, "Phase 9: lookup-key target encoding"),
+    "histgbm_encoded_v2": (
+        histgbm_encoded_v2,
+        "Phase 12: transductive counts + 10 enc folds + trig",
+    ),
     "histgbm_encoded_full": (
         histgbm_encoded_full,
         "Phase 9: target encoding + lattice + imputation",

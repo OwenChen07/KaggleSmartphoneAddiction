@@ -366,3 +366,59 @@ class GeneratorFeatures(BaseEstimator, TransformerMixin):
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
         base = self.feature_names_in_ if input_features is None else np.asarray(input_features)
         return np.asarray([*base, *GENERATOR_COLS], dtype=object)
+
+
+
+#: The two columns the generator uses purely as lookup keys — zero monotone
+#: signal (univariate AUC 0.492 and 0.541) but a per-value target-rate spread
+#: 22x and 26x what sampling noise allows.
+LOOKUP_COLS = ["notifications_per_day", "app_opens_per_day"]
+
+#: Periods for `LookupTrig`. Chosen to span the columns' ranges (20-250 and
+#: 15-180) at several scales rather than to match any measured periodicity —
+#: there is none. See the class docstring.
+TRIG_PERIODS = [5, 10, 20, 50]
+
+TRIG_COLS = [
+    f"{fn}{k}_{c}" for c in LOOKUP_COLS for k in TRIG_PERIODS for fn in ("sin", "cos")
+]
+
+
+class LookupTrig(BaseEstimator, TransformerMixin):
+    """Sine and cosine of the two lookup columns, at several periods.
+
+    **There is no periodicity here, and that is not why this works.** A
+    published Fourier analysis of these columns found nothing, and three
+    independent diagnostics agreed. The feature helps anyway, for a reason
+    about trees rather than about signal.
+
+    A split on `sin(2*pi*x/20)` selects a **union of disjoint intervals** of x
+    — every value near a peak, scattered across the whole range — where a split
+    on `x` itself can only take one contiguous range. Against a lookup table
+    that jumps 0.22 in target rate between neighbouring values, one such split
+    reaches far more than target encoding's one-split-per-value.
+
+    So this adds no information: the model already had it, exactly, from the
+    encoded columns. What changes is the **price** of using it. That
+    distinction — "the model has this" does not imply "the model can afford
+    this" — is the third time this project has met it, after the decimal
+    lattice and the imputation-augment result.
+    """
+
+    def fit(self, X: pd.DataFrame, y=None):
+        self.feature_names_in_ = np.asarray(pd.DataFrame(X).columns, dtype=object)
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        X = pd.DataFrame(X).copy()
+        for c in LOOKUP_COLS:
+            v = X[c].to_numpy(dtype=np.float64)
+            for k in TRIG_PERIODS:
+                ang = 2.0 * np.pi * v / k
+                X[f"sin{k}_{c}"] = np.sin(ang).astype(np.float32)
+                X[f"cos{k}_{c}"] = np.cos(ang).astype(np.float32)
+        return X
+
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        base = self.feature_names_in_ if input_features is None else np.asarray(input_features)
+        return np.asarray([*base, *TRIG_COLS], dtype=object)
