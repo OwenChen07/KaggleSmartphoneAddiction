@@ -289,3 +289,80 @@ def imputed_numeric_cols(mode: str = "replace", columns: list[str] | None = None
     targets = list(RECOVERABLE_COLS) if columns is None else list(columns)
     extra = [] if mode == "replace" else [f"{c}__imp" for c in targets]
     return [*engineered_numeric_cols(engineered), *extra]
+
+
+# --------------------------------------------------------------------------
+# Phase 9 — structure the generator left behind
+# --------------------------------------------------------------------------
+
+#: Columns carrying a sub-unit decimal part.
+FRACTIONAL_COLS = [
+    "daily_screen_time_hours",
+    "social_media_hours",
+    "gaming_hours",
+    "work_study_hours",
+    "sleep_hours",
+    "weekend_screen_time",
+]
+
+#: Emitted by `GeneratorFeatures`, in order.
+GENERATOR_COLS = [
+    *[f"frac_{c}" for c in FRACTIONAL_COLS],
+    *[f"d1_{c}" for c in FRACTIONAL_COLS],
+    "unaccounted_screen",
+]
+
+
+class GeneratorFeatures(BaseEstimator, TransformerMixin):
+    """Features that describe how the data was *generated*, not what it means.
+
+    Two unrelated channels, both verified on this data in
+    reports/external-research.md.
+
+    **The decimal lattice.** The first decimal digit of a column predicts the
+    target. Rows whose `daily_screen_time_hours` ends in .0 are addicted at a
+    rate of 0.6513; rows ending in .2 at 0.7365 — an 8.5 point swing against a
+    base rate of 0.7094, across 50-68k rows per digit. `weekend_screen_time`
+    swings 10.5 points. No behavioural story explains that; it is a fingerprint
+    of how the generator produced the numbers.
+
+    This is a *different channel* from target encoding rather than another view
+    of it. Target encoding estimates every exact value independently, so it has
+    no way to express "everything ending in .2 shares something" — that
+    statement pools across integer parts, and its levels do not.
+
+    **The accounting identity.** `daily_screen_time_hours` is the sum of the
+    itemised activities plus an unnamed remainder:
+    `daily >= social + gaming + work_study`, which holds with 36 violations in
+    421,427 rows, all at -1e-6 — float rounding, not exceptions. So the
+    residual is the generator's "other" bucket and is a real quantity.
+
+    Phase 4's `residual_screen` subtracted only two of the three terms and so
+    never expressed the identity. That column is deliberately left unchanged:
+    runs 008-020 in `experiments/log.csv` were fit with it, and redefining it
+    would make them unreproducible while the log still claimed otherwise. The
+    corrected version arrives here under a new name instead.
+    """
+
+    def fit(self, X: pd.DataFrame, y=None):
+        self.feature_names_in_ = np.asarray(pd.DataFrame(X).columns, dtype=object)
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        X = pd.DataFrame(X).copy()
+        for c in FRACTIONAL_COLS:
+            v = X[c].to_numpy(dtype=np.float64)
+            with np.errstate(invalid="ignore"):
+                X[f"frac_{c}"] = (v - np.floor(v)).astype(np.float32)
+                X[f"d1_{c}"] = (np.floor(v * 10) % 10).astype(np.float32)
+        X["unaccounted_screen"] = (
+            X["daily_screen_time_hours"]
+            - X["social_media_hours"]
+            - X["gaming_hours"]
+            - X["work_study_hours"]
+        ).astype(np.float32)
+        return X
+
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        base = self.feature_names_in_ if input_features is None else np.asarray(input_features)
+        return np.asarray([*base, *GENERATOR_COLS], dtype=object)

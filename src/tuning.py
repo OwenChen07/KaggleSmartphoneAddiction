@@ -45,7 +45,7 @@ from scipy.stats import loguniform, randint  # noqa: E402
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold  # noqa: E402
 
 from .data import load_test, load_train  # noqa: E402
-from .models import histgbm_features  # noqa: E402
+from .models import MODELS, histgbm_features  # noqa: E402
 from .validation import SEED, log_run, run_cv, save_oof, save_submission  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +61,17 @@ SEARCH_SPACE = {
 }
 
 
-def run_search(X: pd.DataFrame, y: np.ndarray, *, n_iter: int, cv: int, seed: int):
+def _build(model: str):
+    """Pipeline to search over. Defaults to the Phase 4 feature pipeline for
+    backwards compatibility with the Phase 6 search; `--model` selects any
+    entry in the zoo, which is how the Phase 9 representation gets re-tuned."""
+    if model is None:
+        return histgbm_features()
+    return MODELS[model][0]()
+
+
+def run_search(X: pd.DataFrame, y: np.ndarray, *, n_iter: int, cv: int, seed: int,
+               model: str | None = None):
     """RandomizedSearchCV over the Phase 4 pipeline.
 
     Scoring is `roc_auc`, matching the competition metric. `refit=False` — the
@@ -69,7 +79,7 @@ def run_search(X: pd.DataFrame, y: np.ndarray, *, n_iter: int, cv: int, seed: in
     5-fold run afterwards.
     """
     search = RandomizedSearchCV(
-        histgbm_features(),
+        _build(model),
         SEARCH_SPACE,
         n_iter=n_iter,
         scoring="roc_auc",
@@ -100,13 +110,24 @@ def main() -> None:
         ),
     )
     parser.add_argument("--label", default=None, help="description for a --params run")
+    parser.add_argument(
+        "--model",
+        default=None,
+        choices=list(MODELS),
+        help="zoo entry to search/re-measure; default is the Phase 4 feature pipeline",
+    )
+    parser.add_argument(
+        "--params-out",
+        default=None,
+        help="write the winning params here instead of experiments/best_params.json",
+    )
     args = parser.parse_args()
 
     if args.params is not None:
         params = json.loads(args.params)
         X, y = load_train()
         X_test, test_ids = load_test()
-        est = histgbm_features()
+        est = _build(args.model)
         est.set_params(**params)
         result = run_cv(
             est, X, y, X_test,
@@ -124,7 +145,8 @@ def main() -> None:
     print("(subsampled for runtime; the winner is re-measured on full data)\n", flush=True)
 
     search = run_search(
-        X_search, y_search, n_iter=args.n_iter, cv=args.search_folds, seed=SEED
+        X_search, y_search, n_iter=args.n_iter, cv=args.search_folds, seed=SEED,
+        model=args.model,
     )
 
     results = pd.DataFrame(search.cv_results_).sort_values("rank_test_score")
@@ -140,8 +162,9 @@ def main() -> None:
     for k, v in sorted(best.items()):
         print(f"  {k} = {v!r}")
 
-    BEST_PARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    BEST_PARAMS_PATH.write_text(
+    out_path = Path(args.params_out) if args.params_out else BEST_PARAMS_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
         json.dumps(
             {
                 "params": {k: (v.item() if hasattr(v, "item") else v) for k, v in best.items()},
@@ -153,7 +176,7 @@ def main() -> None:
             indent=2,
         )
     )
-    print(f"\nwrote {BEST_PARAMS_PATH}")
+    print(f"\nwrote {out_path}")
 
     if args.no_final:
         return
@@ -161,10 +184,12 @@ def main() -> None:
     print("\n=== re-measuring the winner on full data, standard 5-fold ===", flush=True)
     X, y = load_train()
     X_test, test_ids = load_test()
-    tuned = histgbm_features()
+    tuned = _build(args.model)
     tuned.set_params(**{k: (v.item() if hasattr(v, "item") else v) for k, v in best.items()})
     result = run_cv(
-        tuned, X, y, X_test, description="Phase 6: tuned HistGBM + engineered", model="histgbm_tuned"
+        tuned, X, y, X_test,
+        description=args.label or "Phase 10: re-tuned on the encoded representation",
+        model="histgbm_tuned2",
     )
     run_id = log_run(result)
     save_oof(result, run_id)

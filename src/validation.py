@@ -92,7 +92,12 @@ def _count_model_features(fitted_estimator, fallback: int) -> int:
     try:
         return int(len(fitted_estimator.named_steps["prep"].get_feature_names_out()))
     except Exception:
-        return fallback
+        pass
+    # Estimators that are not Pipelines can report the width themselves. Without
+    # this the log silently records the raw input column count, which is what
+    # happened to run 017 (12 recorded against a true 27).
+    width = getattr(fitted_estimator, "n_features_out_", None)
+    return int(width) if width is not None else fallback
 
 
 def run_cv(
