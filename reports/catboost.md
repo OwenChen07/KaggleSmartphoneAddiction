@@ -119,6 +119,44 @@ measured for single models):
 That would put the blend at the lower edge of the ~0.9712 public plateau —
 reached with a self-contained pipeline that trains from `train.csv` alone.
 
+### Outcome: 0.96948, and I used the wrong constant
+
+**It scored 0.96948 against a prediction of 0.97013 — over-predicted by
+0.00065**, the largest prediction error in the project so far. Rank
+**827 → 767**.
+
+The error was mine, not the theory's. I plugged in the **+0.001012**
+fold-averaging bonus measured for a *single* tuned model. But a blend of two
+models is **already variance-reduced** — which is the entire finding of Phase
+7, that seed-averaging shrinks the fold-averaging bonus from +0.001012 to
++0.000371 because the two are redundant. A rank-average of two decorrelated
+models does the same thing.
+
+Using the variance-reduced constant instead:
+
+| | value |
+|---|---|
+| blend OOF | 0.968271 |
+| covariate shift | +0.000852 |
+| fold-averaging bonus for an **already-averaged** model | +0.000371 |
+| **corrected prediction** | **0.96949** |
+| **actual** | **0.96948** |
+
+**An error of 0.00001.** The observed gap of −0.001209 also sits exactly where
+the theory says it should: between the single-model gaps (−0.0018 to −0.0022)
+and the seed-averaged ones (−0.00134, −0.00139).
+
+So this is the third independent confirmation that the OOF-to-LB gap tracks
+model variance, and the first time the theory was strong enough to catch *my*
+mistake rather than the other way round. The rule, stated properly:
+
+> **Use the single-model fold-averaging bonus only for a single model.** Any
+> prediction produced by averaging — over seeds, over folds, over model
+> families — has already spent most of that bonus and gets the small constant.
+
+Recorded rather than quietly fixed, because a prediction that misses and then
+explains its own miss is worth more than one that happened to land.
+
 ## Reproducing
 
 ```bash

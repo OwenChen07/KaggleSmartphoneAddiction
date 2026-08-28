@@ -8,8 +8,8 @@ believed.
 
 - **Task:** predict `addicted_label` (binary), metric **ROC AUC**
 - **Data:** 691,369 train / 296,302 test rows; 9 numeric + 3 categorical features
-- **Best OOF AUC:** **0.96726** (run `022` — target encoding + decimal lattice + imputation)
-- **Public LB:** **0.96905** (run `022`), rank **827 of 2,982**
+- **Best OOF AUC:** **0.96827** (rank-average of CatBoost `024` and HistGBM `023`)
+- **Public LB:** **0.96948**, rank **767 of 2,982**
 
 > Every model number below is out-of-fold cross-validation on the training set.
 > `public_lb` and `gap` in `experiments/log.csv` are filled in only after a
@@ -27,7 +27,8 @@ believed.
 | `017` | tuned, 5-seed average | 27 | 0.964060 | 0.96540 | −0.001340 |
 | `019` | tuned + imputed columns (augment) | 32 | 0.963913 | **0.96607** | −0.002157 |
 | `020` | imputed + 5-seed average | 32 | 0.964709 | 0.96610 | −0.001391 |
-| `022` | **target encoding + lattice + imputation** | 69 | **0.967257** | **0.96905** | −0.001793 |
+| `022` | target encoding + lattice + imputation | 69 | 0.967257 | 0.96905 | −0.001793 |
+| blend | **rank-avg CatBoost `024` + HistGBM `023`** | — | **0.968271** | **0.96948** | −0.001209 |
 
 **This table previously claimed the gap was "a stable property of the
 pipeline, not a per-model accident". That claim is now falsified, and the
