@@ -86,3 +86,120 @@ Documenting a mistake does not prevent it. What prevents it is making the fix
 part of the launch itself, so `PYTHONPATH=/home/user/KaggleSmartphoneAddiction`
 is now a standing rule in the loop's own prompt rather than something to
 remember.
+
+---
+
+## Iteration 2 — LightGBM as a third family: **a real gain, +0.000156**
+
+Iteration 1 tried to make an existing member better and failed. This iteration
+tried the other direction: add a member that is *worse* but *different*.
+
+### Why a weaker model can help
+
+The blend gains from disagreement. If two models rank rows almost identically,
+averaging them cancels almost nothing; the average is just a slightly quieter
+copy of either. What a third member contributes is the part of its ranking the
+others do not already have — so the question is never "is it as good?" but
+"does what it gets right, and what it gets wrong, differ from the others?"
+
+The three members now attack the lookup-key problem three genuinely different
+ways:
+
+| member | how it handles a categorical level |
+|---|---|
+| `histgbm_encoded_v2` (025) | nested target encoder, **one global smoothing constant** for every level |
+| `catboost_lookup` (024) | ordered target statistics, **shrinkage adapted per row** under a random permutation |
+| `lgbm_lookup` (026) | **no target statistic at all** — sorts levels by accumulated gradient inside the node, then cuts that ordering |
+
+The third is the reason to expect decorrelation, and also the reason to expect
+it to be weaker: sorting by gradient is a heuristic where the other two
+estimate the quantity directly.
+
+### It is weaker, and it is more different
+
+Full 5-fold, run `026`: **OOF 0.965839**, folds ±0.00053, 2123s.
+
+    026 vs 024   -0.00207   95% CI [-0.00219, -0.00194]
+
+Decisively the weakest of the three. But on the full OOF vectors:
+
+| pair | Spearman |
+|---|---|
+| CatBoost vs HistGBM enc v2 | 0.9861 |
+| CatBoost vs **LightGBM** | 0.9819 |
+| HistGBM enc v2 vs **LightGBM** | 0.9791 |
+
+LightGBM is *further* from each established member than they are from each
+other. The diversity premise holds on full data, not just on the screening
+fold.
+
+### The result
+
+    blend 024+025+026    OOF 0.968507
+    baseline 024+025     OOF 0.968351
+    vs 024+025         +0.000156   95% CI [+0.000120, +0.000199]
+    -> a real improvement on the baseline blend.
+
+**New best OOF: 0.968507.** A member 0.0021 weaker than the best single model
+made the blend better, which is the clearest demonstration in this project so
+far that blend membership is about decorrelation, not about solo strength.
+
+### The screening bar was wrong, and so was the published cliff
+
+Two things this iteration overturns.
+
+**The +0.0002 single-fold screening bar would have discarded this.** Neither
+config cleared it (fold-1 blend deltas +0.000108 and +0.000130). The full
+5-fold delta is +0.000156 — *between* the two screening estimates, so the
+screening numbers were not even biased, merely too noisy at one fold to clear
+an arbitrary threshold. A single fold has ~1/√5 the precision of the OOF and
+the bar was set without reference to that. **The bar is now: screen for sign
+and consistency, not for magnitude against a fixed threshold.**
+
+**The ~0.966 "competitiveness cliff" from the published ledger is
+contradicted.** A member at 0.9658 — 0.0002 *below* the supposed cliff —
+helps, consistently, in every subset it appears in. A cliff in solo score is
+the wrong frame entirely; there is no threshold a member must clear, only a
+trade between how much weaker it is and how much less correlated.
+
+### Two negative results worth keeping
+
+**Adding both LightGBM configs hurts** (fold 1: -0.000152 against +0.000108
+and +0.000130 for either alone). Two near-duplicates split the blend's weight
+between themselves and dilute the two established members without adding a
+third independent view. Diversity is a property of the *set*, not of each
+member.
+
+**A 4-way blend is a marginal extra that I do not trust.** Every one of the
+top seven subsets contains 026, which is real evidence. But the top of the
+table is:
+
+| subset | OOF AUC |
+|---|---|
+| 024+025+026+023 | 0.968534 |
+| 024+025+026+022 | 0.968518 |
+| **024+025+026** | **0.968507** |
+| 024+025+026+022+023 | 0.968484 |
+
+Adding 023 measures +0.000027, 95% CI [+0.000010, +0.000043] — nominally
+excluding zero. **That interval is optimistic and should not be read as a
+gain.** It was chosen as the best of 26 subsets scored on the same OOF rows
+the bootstrap then resamples; the bootstrap prices row noise but not the
+selection over subsets. The honest statement is that the top four subsets are
+separated by 0.00005 — a tenth of the fold noise — and are not distinguishable.
+
+**The three-way is adopted** because it was the hypothesis stated before the
+subsets were scored, and because 023 is a second HistGBM rather than a fourth
+mechanism. Taking the argmax of a 26-row table is how a project starts
+fitting its own validation set.
+
+### Harness change
+
+`src/blend.py` gained `--vs`, which bootstraps a candidate blend against a
+*baseline blend* instead of against its own strongest member. Without it there
+is no way to ask "does a third member help?" — the built-in comparison only
+answered "does the blend beat its best member?", which stays true whether the
+new member helps or hurts. The baseline is built by the same rank-average as
+the candidate so the difference isolates the extra member. Verified by
+reproducing the known Phase 12 result from a fresh direction: 024+025 over
+024+022 is +0.000178, CI [+0.000145, +0.000209].
