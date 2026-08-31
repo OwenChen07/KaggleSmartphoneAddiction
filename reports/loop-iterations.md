@@ -337,3 +337,85 @@ stays in the log with its OOF vector on disk. A negative member is still a
 measured, reproducible artefact, and the next iteration's question — whether a
 *different representation* rather than a different function class produces
 decorrelation from the leaders — needs this vector to compare against.
+
+---
+
+## Iteration 4 — is the blend saturated? **Yes, and at almost no compute cost**
+
+Iteration 3 concluded that a member must be decorrelated *from the leaders*.
+The obvious next move was to build a member on a different representation. That
+move was abandoned before any compute was spent on it, because the OOF vectors
+needed to test its premise were already on disk.
+
+### The premise was false
+
+Mean Spearman against the two leaders (024, 025), for every candidate available:
+
+| run | representation | solo OOF | mean rho vs leaders |
+|---|---|---|---|
+| 019 | raw | 0.963913 | **0.9791** |
+| 027 | encoded | 0.964171 | 0.9795 |
+| 012 | raw | 0.963192 | 0.9797 |
+| 026 | encoded | 0.965839 | 0.9805 |
+| 020 | raw | 0.964709 | 0.9820 |
+| 017 | raw | 0.964060 | 0.9822 |
+
+The never-encoded runs are **not** more decorrelated from the leaders than the
+encoded ones. Representation is not the lever; neither is function class
+(iteration 3). Everything available sits in a band of width 0.003.
+
+That pattern has a name: a **correlation floor**. Every model here is trained
+on the same rows against the same target, and the signal that target carries is
+mostly the same signal no matter how it is extracted. Around 0.979 is as far
+apart as two competent models on this data get.
+
+### Hypothesis and falsifier, stated before the test
+
+**Hypothesis.** The blend is saturated: no available member breaks the floor,
+so none can pay.
+
+**Test.** The single most-decorrelated candidate, 019 at rho 0.9791. Selected on
+*correlation*, deliberately not on the blend score about to be measured, so this
+is not an argmax over subsets.
+
+**Falsifier.** 019 gives a positive CI excluding zero — the floor is passable.
+
+### Result: confirmed
+
+    blend 024+025+026+019   0.968438
+    baseline 024+025+026    0.968507
+    vs 024+025+026        -0.000069   95% CI [-0.000103, -0.000036]
+
+0.15x fold noise, negative, excluding zero. The most decorrelated member on
+offer still costs.
+
+### What the three tested additions say together
+
+| member | solo OOF | mean rho vs leaders | blend delta |
+|---|---|---|---|
+| LightGBM `026` | **0.965839** | 0.9805 | **+0.000156** |
+| 019 | 0.963913 | **0.9791** (lowest) | −0.000069 |
+| MLP `027` | 0.964171 | 0.9795 | −0.000186 |
+
+The winner is the member with the **highest** solo score and the **highest**
+correlation — the opposite of what iteration 2's headline suggested. Across the
+narrow band actually available, the 0.003 spread in correlation is too small to
+matter, and solo strength decides.
+
+**The corrected picture, third revision.** Iteration 2 said decorrelation beats
+strength. Iteration 3 narrowed it to decorrelation *from the leaders*.
+Iteration 4 shows that within the correlation floor this data imposes, there is
+not enough decorrelation available for it to be the deciding variable at all.
+LightGBM paid because it was **strong** (0.9658), not because it was distinct.
+Everything at or below 0.9647 costs.
+
+Three points is not a law, so this is a bound rather than a threshold: **a
+fourth member would need a solo OOF somewhere near 0.966 to pay, and nothing in
+the zoo except the leaders themselves reaches that.**
+
+### Cost
+
+Two `src.blend` invocations and a correlation table over vectors already on
+disk. No model was trained. The iteration that *would* have been run — a new
+member on a new representation — was cancelled by evidence that already
+existed, which is the cheapest possible way for a hypothesis to die.
