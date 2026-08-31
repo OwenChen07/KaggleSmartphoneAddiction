@@ -425,6 +425,23 @@ def _lgbm_lookup():
     return LGBMLookup(params=dict(learning_rate=0.03, num_leaves=255, n_estimators=3000))
 
 
+def _lgbm_lookup_v2():
+    """Iteration 5: the strongest LightGBM config found at full fold-1 scale.
+
+    A NEW entry rather than new parameters on `lgbm_lookup`, because run 026
+    was produced by that entry and changing it in place would make a logged row
+    irreproducible. Selection was on **solo AUC**, the pre-registered criterion,
+    not on the blend delta -- picking the config with the best blend delta would
+    be an argmax on the very rows the comparison is scored over.
+
+    fold-1: solo 0.965284 (+0.000298 over the registered config), and a 3-way
+    blend delta of only +0.000013.
+    """
+    from .lgbm_model import LGBMLookup
+
+    return LGBMLookup(params=dict(learning_rate=0.02, num_leaves=511, n_estimators=5000))
+
+
 def _catboost_lookup():
     """Imported lazily so the zoo still loads if catboost is not installed."""
     from .catboost_model import catboost_lookup
@@ -480,6 +497,10 @@ MODELS = {
     "mlp_encoded": (
         mlp_encoded,
         "Iteration 3: MLP on the encoded representation, a non-tree function class",
+    ),
+    "lgbm_lookup_v2": (
+        _lgbm_lookup_v2,
+        "Iteration 5: LightGBM re-tuned for solo strength (lr.02/511/5000)",
     ),
     "lgbm_lookup": (
         _lgbm_lookup,

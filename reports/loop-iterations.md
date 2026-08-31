@@ -419,3 +419,121 @@ Two `src.blend` invocations and a correlation table over vectors already on
 disk. No model was trained. The iteration that *would* have been run — a new
 member on a new representation — was cancelled by evidence that already
 existed, which is the cheapest possible way for a hypothesis to die.
+
+---
+
+## Iteration 5 — strengthen the weakest member: **null, strike 3**
+
+LightGBM was the least-tuned member: its config came from a two-point screen,
+not a search. Iteration 4 concluded solo strength was the deciding variable, so
+this should have paid.
+
+**Hypothesis.** A stronger LightGBM lifts the 3-way blend.
+**Falsifier.** The retuned 3-way CI includes zero, or no config beats 0.965
+solo at full fold-1.
+
+Swept at **full fold-1 scale**, not on a subsample — rule 9 exists because a
+subsample search misled iteration 1 by 5x, and a full-scale sweep costs the
+ranking and the magnitude from the same problem.
+
+| config | solo | Δsolo | 3-way Δ | transfer |
+|---|---|---|---|---|
+| A slower+wider lr.02/511/5000 | 0.965284 | **+0.000298** | +0.000013 | 4% |
+| B finer leaves mcs=50 | 0.965064 | +0.000078 | +0.000022 | 28% |
+| C less reg cs1.0/l2=1 | 0.965175 | +0.000188 | +0.000044 | 23% |
+
+Config A was carried forward on **solo AUC**, the pre-registered criterion. C
+had the best blend delta, but selecting on that would be an argmax over the
+very rows the comparison is then scored on.
+
+Registered as a **new** zoo entry `lgbm_lookup_v2`, not as new parameters on
+`lgbm_lookup`, so run 026 stays reproducible.
+
+### Result
+
+Run `028`, full 5-fold: **OOF 0.966091**, +0.000252 over run 026. A real solo
+improvement, and it bought nothing:
+
+    blend 024+025+028      0.968511
+    baseline 024+025+026   0.968507
+    vs baseline          +0.000004   95% CI [-0.000011, +0.000018]
+    -> indistinguishable. Not an improvement.
+
+**0.009x the fold noise.** 1.6% of the solo gain reached the blend.
+
+---
+
+# What the five iterations actually found
+
+The headline rule was revised three times, each revision forced by a
+measurement rather than by argument. The final version explains all five
+iterations at once.
+
+**Iteration 2:** decorrelation beats solo strength. A member 0.0021 *weaker*
+than the best single model improved the blend (+0.000156, CI excluding zero).
+
+**Iteration 3:** narrowed — decorrelation must be *from the leaders*. An MLP
+decorrelated mainly from the junior member cost -0.000186.
+
+**Iteration 4:** the available correlation spread (0.979-0.982) is too small to
+be the deciding variable at all. The member that paid had the *highest*
+correlation of the three tested. Nothing breaks the floor.
+
+**Iteration 5:** and the two axes are not independent.
+
+### Strength and decorrelation are negatively coupled
+
+Across the HistGBM family, solo strength and correlation with CatBoost move
+together:
+
+| run | variant | solo | rho vs CatBoost |
+|---|---|---|---|
+| 012 | tuned | 0.963192 | 0.9760 |
+| 019 | imputed aug | 0.963913 | 0.9747 |
+| 017 | tuned seedavg | 0.964060 | 0.9786 |
+| 020 | imputed seedavg | 0.964709 | 0.9776 |
+| 022 | encoded | 0.967257 | 0.9820 |
+| 023 | tuned2 | 0.967710 | 0.9865 |
+
+    Spearman(solo, rho) = +0.886  p=0.019
+    Pearson             = +0.921  p=0.009
+
+And measured directly within one family, one config change:
+
+    026  lr.03/255/3000   solo 0.965839   mean rho vs leaders 0.9805
+    028  lr.02/511/5000   solo 0.966091   mean rho vs leaders 0.9808
+                          +0.000252                           +0.0004
+
+**Getting stronger means getting more similar.** Two models trained on the same
+rows against the same target approach the same function; the better each gets,
+the closer both are to it, and the less either has to say that the other does
+not. That is why blend gains here transfer at 2-30% rather than 100%, why the
+correlation floor exists at all, and why the blend saturated.
+
+*(n=6, and those runs share nested feature lineages, so they are not
+independent observations and the p-values are optimistic. The direction is
+robust across two independent lines of evidence -- the family table and the
+026-to-028 single-config change -- but the coefficient should not be quoted as
+a measured constant.)*
+
+### The practical consequence
+
+There are only two ways to improve a saturated blend, and this project has
+exhausted both at this scale:
+
+1. **A genuinely new mechanism** — a different partition rule (iteration 2's
+   LightGBM, which worked), not a different function class on the same
+   representation (iteration 3's MLP, which did not).
+2. **A stronger leader** — but strengthening pulls toward the other leaders,
+   so the blend keeps only a small fraction of the gain (iteration 5).
+
+Both were tried. One paid +0.000156 once; the other pays about 2%.
+
+### Stopping
+
+Iterations 3, 4 and 5 produced no gain with a CI excluding zero. That is the
+stop condition, and it is met honestly rather than by running out of ideas:
+each null came with a measurement that explains *why* it was null, and together
+they form a single mechanism rather than three separate disappointments.
+
+**Final state: OOF 0.968507, public LB 0.96978, rank 838 of 3,389.**

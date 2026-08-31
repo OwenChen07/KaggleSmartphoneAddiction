@@ -26,3 +26,4 @@ run_id,timestamp,description,model,n_features,n_model_features,n_train,oof_auc,f
 025,2026-08-28T15:54:16Z,Phase 12: transductive counts + 10 enc folds + trig,histgbm_encoded_v2,12,85,691369,0.967839,0.96784,0.000452,488.8,,
 026,2026-08-31T02:38:26Z,"Phase 13: LightGBM, gradient-sorted categorical splits",lgbm_lookup,12,49,691369,0.965839,0.965841,0.000531,2122.6,,
 027,2026-08-31T03:13:51Z,"Iteration 3: MLP on the encoded representation, a non-tree function class",mlp_encoded,12,172,691369,0.964171,0.964245,0.00039,664.4,,
+028,2026-08-31T04:48:25Z,Iteration 5: LightGBM re-tuned for solo strength (lr.02/511/5000),lgbm_lookup_v2,12,49,691369,0.966091,0.966092,0.000529,3931.1,,
