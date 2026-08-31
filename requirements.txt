@@ -25,6 +25,13 @@ scikit-learn>=1.5,<1.9
 # it the raw string levels as `cat_features` lets the estimator build those
 # statistics itself. See reports/catboost.md.
 catboost>=1.2
+# LightGBM is a third *family* for the blend, not a fourth attempt at a better
+# single model. It splits categoricals by sorting levels on the gradient
+# statistic and cutting that order, which is a different partition rule from
+# both HistGBM's one-hot-style handling and CatBoost's ordered target
+# statistics -- so its errors are expected to be somewhat decorrelated even
+# where its solo score is lower. See reports/loop-iterations.md.
+lightgbm>=4.0
 
 matplotlib>=3.7
 tabulate>=0.9

@@ -301,7 +301,9 @@ def histgbm_encoded(
     trig: bool = False,
     transductive: bool = False,
     inner_splits: int = 5,
-    params_path: str = "best_params.json",
+    params_path: str | None = "best_params.json",
+    prep=None,
+    clf=None,
 ) -> Pipeline:
     """Phase 9: the lookup-key representation.
 
@@ -313,9 +315,13 @@ def histgbm_encoded(
     and the full-fit statistics during `predict` — automatically, and in the
     right direction each time.
     """
-    params = json.loads(
-        (Path(__file__).resolve().parents[1] / "experiments" / params_path).read_text()
-    )["params"]
+    # params_path=None is for a final estimator that does not take the tuned
+    # HistGBM parameters (the MLP member); the representation is identical.
+    params = {}
+    if params_path is not None:
+        params = json.loads(
+            (Path(__file__).resolve().parents[1] / "experiments" / params_path).read_text()
+        )["params"]
     steps = []
     numeric = list(NUMERIC_COLS)
     if impute:
@@ -344,8 +350,8 @@ def histgbm_encoded(
             TargetFrequencyEncoder(inner_splits=inner_splits, freq_frame=freq_frame),
         ))
         numeric = encoded_numeric_cols(numeric)
-    steps.append(("prep", tree_preprocessor(numeric_cols=numeric)))
-    steps.append(("clf", HistGradientBoostingClassifier(random_state=SEED)))
+    steps.append(("prep", (prep or tree_preprocessor)(numeric_cols=numeric)))
+    steps.append(("clf", clf if clf is not None else HistGradientBoostingClassifier(random_state=SEED)))
     pipe = Pipeline(steps)
     pipe.set_params(**params)
     return pipe
@@ -364,6 +370,76 @@ def histgbm_encoded_v2() -> Pipeline:
         transductive=True, inner_splits=10,
         params_path="best_params_encoded.json",
     )
+
+
+def mlp_encoded(params: dict | None = None) -> Pipeline:
+    """Iteration 3: the same encoded representation, a different function class.
+
+    Every member of the blend so far is an axis-aligned tree ensemble: each
+    one carves the space into boxes and fits a constant inside each box. They
+    differ in *how* they choose the boxes, which is what has bought the blend
+    its gains. This member differs in what it can express at all -- an MLP
+    fits a smooth global function, so a diagonal or curved boundary that costs
+    a tree a staircase of splits costs the network one unit.
+
+    That is the reason to expect it to be the most decorrelated member yet,
+    and also the reason to expect it to score worse: the lookup-key structure
+    this dataset rewards is *exactly* the piecewise-constant, high-cardinality
+    kind trees are built for. The target-encoded columns are what make the
+    attempt viable at all -- they hand the network the per-level target
+    statistic it could never learn from a raw level index.
+
+    Early stopping holds out 10% of the *training fold*, never the validation
+    fold, so the stopping point costs nothing that run_cv is measuring.
+    """
+    from sklearn.neural_network import MLPClassifier
+
+    from .preprocessing import nn_preprocessor
+
+    defaults = dict(
+        hidden_layer_sizes=(256, 128),
+        alpha=1e-4,
+        batch_size=1024,
+        learning_rate_init=1e-3,
+        max_iter=60,
+        early_stopping=True,
+        validation_fraction=0.1,
+        n_iter_no_change=5,
+        random_state=SEED,
+    )
+    return histgbm_encoded(
+        impute=True, lattice=True, encode=True, trig=True,
+        transductive=True, inner_splits=10,
+        params_path=None,
+        prep=nn_preprocessor,
+        clf=MLPClassifier(**{**defaults, **(params or {})}),
+    )
+
+
+def _lgbm_lookup():
+    """Imported lazily so the zoo still loads if lightgbm is not installed."""
+    from .lgbm_model import LGBMLookup
+
+    # lr 0.03 / 255 leaves measured 0.964978 on fold 1 against 0.964619 for
+    # lr 0.04 / 127 leaves; the larger, slower config is the better member.
+    return LGBMLookup(params=dict(learning_rate=0.03, num_leaves=255, n_estimators=3000))
+
+
+def _lgbm_lookup_v2():
+    """Iteration 5: the strongest LightGBM config found at full fold-1 scale.
+
+    A NEW entry rather than new parameters on `lgbm_lookup`, because run 026
+    was produced by that entry and changing it in place would make a logged row
+    irreproducible. Selection was on **solo AUC**, the pre-registered criterion,
+    not on the blend delta -- picking the config with the best blend delta would
+    be an argmax on the very rows the comparison is scored over.
+
+    fold-1: solo 0.965284 (+0.000298 over the registered config), and a 3-way
+    blend delta of only +0.000013.
+    """
+    from .lgbm_model import LGBMLookup
+
+    return LGBMLookup(params=dict(learning_rate=0.02, num_leaves=511, n_estimators=5000))
 
 
 def _catboost_lookup():
@@ -418,6 +494,18 @@ MODELS = {
     "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
     "histgbm_seedavg": (histgbm_tuned_seedavg, "Phase 7: tuned HistGBM, 5-seed average"),
     "histgbm_imputed": (histgbm_tuned_imputed, "Phase 8: tuned + imputed cols (replace)"),
+    "mlp_encoded": (
+        mlp_encoded,
+        "Iteration 3: MLP on the encoded representation, a non-tree function class",
+    ),
+    "lgbm_lookup_v2": (
+        _lgbm_lookup_v2,
+        "Iteration 5: LightGBM re-tuned for solo strength (lr.02/511/5000)",
+    ),
+    "lgbm_lookup": (
+        _lgbm_lookup,
+        "Phase 13: LightGBM, gradient-sorted categorical splits",
+    ),
     "catboost_lookup": (
         _catboost_lookup,
         "Phase 11: CatBoost, ordered target statistics on raw levels",

@@ -26,6 +26,7 @@ the saved test predictions.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import itertools
 import warnings
 
@@ -140,6 +141,39 @@ def load_test_pred(run_id: str) -> tuple[np.ndarray, np.ndarray]:
     return frame["id"].to_numpy(), frame["addicted_label"].to_numpy()
 
 
+BLEND_LOG = LOG_PATH.parent / "blends.csv"
+
+
+def record_blend(runs, weights, oof_auc) -> None:
+    """Append one row to experiments/blends.csv.
+
+    A blend has no fit of its own, so it can never be a row in
+    experiments/log.csv -- that file's contract is one row per full-data run of
+    the harness, and the OOF vectors it points at are what every paired
+    comparison in this project is built on. Breaking that contract to record a
+    blend would make the log mean two different things.
+
+    But the blends are what actually get submitted, so their leaderboard scores
+    were living only in prose in reports/. This is the separate ledger: same
+    append-only discipline, no public_lb column filled in by the tool, because
+    that number arrives later from Kaggle and gets written in by hand exactly
+    as it does for log.csv.
+    """
+    BLEND_LOG.parent.mkdir(parents=True, exist_ok=True)
+    if not BLEND_LOG.exists():
+        BLEND_LOG.write_text("blend_id,timestamp,members,weights,oof_auc,public_lb\n")
+    blend_id = "+".join(runs)
+    existing = pd.read_csv(BLEND_LOG, dtype=str)
+    if blend_id in set(existing.get("blend_id", [])):
+        print(f"  (blends.csv already has {blend_id}; not duplicating the row)")
+        return
+    w = "" if weights is None else " ".join(str(x) for x in weights)
+    stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with BLEND_LOG.open("a") as fh:
+        fh.write(f"{blend_id},{stamp},{blend_id},{w},{oof_auc:.6f},\n")
+    print(f"  recorded in {BLEND_LOG}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runs", nargs="+", help="run_ids to blend")
@@ -147,6 +181,15 @@ def main() -> None:
     parser.add_argument("--all-subsets", action="store_true", help="score every subset of >=2 runs")
     parser.add_argument("--submit", action="store_true", help="write submissions/blend_<ids>.csv")
     parser.add_argument("--n-boot", type=int, default=500)
+    parser.add_argument(
+        "--vs",
+        nargs="+",
+        default=None,
+        metavar="RUN",
+        help="baseline run_ids to blend and bootstrap against, instead of the "
+             "strongest single member (use to test whether adding a member to "
+             "an existing blend is a real gain)",
+    )
     parser.add_argument(
         "--logit-stack",
         action="store_true",
@@ -197,13 +240,27 @@ def main() -> None:
           f"{'' if args.weights is None else ' weights ' + str(args.weights)}")
     print(f"  blended OOF AUC {auc:.6f}")
 
-    res = bootstrap_auc_diff(y, oofs[best_single], blended, n_boot=args.n_boot)
-    print(f"  vs {best_single} alone   {res['diff']:+.6f}  "
+    if args.vs is None:
+        reference = oofs[best_single]
+        ref_label = f"{best_single} alone"
+        ref_noun = "single model"
+    else:
+        # The baseline is itself a blend, so it has to be built the same way the
+        # candidate is -- rank-average over the same y -- or the difference would
+        # confound "extra member" with "different combination rule".
+        ref_oofs = {r: oofs[r] if r in oofs else load_oof(r) for r in args.vs}
+        reference = rank_average([ref_oofs[r] for r in args.vs])
+        ref_label = "+".join(args.vs)
+        ref_noun = "baseline blend"
+        print(f"  baseline {ref_label} OOF AUC {roc_auc_score(y, reference):.6f}")
+
+    res = bootstrap_auc_diff(y, reference, blended, n_boot=args.n_boot)
+    print(f"  vs {ref_label}   {res['diff']:+.6f}  "
           f"95% CI [{res['ci_low']:+.6f}, {res['ci_high']:+.6f}]")
     print("  -> " + (
-        "the blend is a real improvement." if res["significant"] and res["diff"] > 0
-        else "WORSE than the single model." if res["significant"]
-        else "indistinguishable from the single model. Not an improvement."
+        f"a real improvement on the {ref_noun}." if res["significant"] and res["diff"] > 0
+        else f"WORSE than the {ref_noun}." if res["significant"]
+        else f"indistinguishable from the {ref_noun}. Not an improvement."
     ))
 
     if args.submit:
@@ -221,8 +278,9 @@ def main() -> None:
         out = SUBMISSION_DIR / f"blend_{'_'.join(args.runs)}.csv"
         pd.DataFrame({"id": ids, "addicted_label": test_blend}).to_csv(out, index=False)
         print(f"\n  wrote {out}")
-        print("  NOTE: not logged. experiments/log.csv rows are single runs of the")
-        print("        harness; a blend has no fit of its own to record.")
+        print("  NOTE: not in experiments/log.csv -- those rows are single runs of")
+        print("        the harness; a blend has no fit of its own to record.")
+        record_blend(args.runs, args.weights, auc)
 
 
 if __name__ == "__main__":
