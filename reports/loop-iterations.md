@@ -203,3 +203,42 @@ new member helps or hurts. The baseline is built by the same rank-average as
 the candidate so the difference isolates the extra member. Verified by
 reproducing the known Phase 12 result from a fresh direction: 024+025 over
 024+022 is +0.000178, CI [+0.000145, +0.000209].
+
+### The leaderboard, and a prediction that missed
+
+Submitted `blend_024_025_026.csv`. The prediction was stated *before*
+submitting, so this is a test rather than a story told afterwards.
+
+| | OOF | public LB |
+|---|---|---|
+| 024+023 (Phase 11) | 0.968271 | 0.96948 |
+| 024+025 (Phase 12) | 0.968351 | 0.96955 |
+| **024+025+026 (this)** | **0.968507** | **0.96978** |
+
+Rank **901 -> 838** of 3,389 teams.
+
+    predicted  0.96969   (slope 0.875 fitted on the two earlier blends)
+    actual     0.96978
+    error     +0.00009   -- the prediction was LOW
+
+The direction of the miss is the interesting part. The two earlier blends gave
+ΔLB/ΔOOF = 0.875; this one gives **1.47**. The OOF gain of +0.000156 bought
++0.00023 on the leaderboard — half again as much as it "should" have.
+
+**So the slope is not a slope.** Three points, two incompatible ratios. The
+honest conclusion is narrower than the one I was heading for: OOF improvements
+have transferred to the leaderboard in the same direction *every time* across
+eleven submissions, but the magnitude is not predictable to better than about
+a factor of two, and any future LB prediction in this project should be given
+as a direction plus a range, not a number.
+
+There is a plausible mechanism, flagged as a hypothesis rather than a finding:
+the OOF-to-LB gap here was already decomposed into covariate shift plus a
+*variance-dependent* fold-averaging bonus, and the test predictions average
+five fold-models. A gain that comes from **decorrelation** reduces prediction
+variance directly, so it should collect more of that bonus than a gain of the
+same OOF size that comes from a single member simply being stronger. That
+would predict exactly what happened here — a diversity gain over-transferring
+where the earlier strength gains under-transferred. **One point is not
+evidence for it.** It becomes testable if a future iteration produces another
+diversity-driven gain and another strength-driven one.
