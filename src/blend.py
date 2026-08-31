@@ -148,6 +148,15 @@ def main() -> None:
     parser.add_argument("--submit", action="store_true", help="write submissions/blend_<ids>.csv")
     parser.add_argument("--n-boot", type=int, default=500)
     parser.add_argument(
+        "--vs",
+        nargs="+",
+        default=None,
+        metavar="RUN",
+        help="baseline run_ids to blend and bootstrap against, instead of the "
+             "strongest single member (use to test whether adding a member to "
+             "an existing blend is a real gain)",
+    )
+    parser.add_argument(
         "--logit-stack",
         action="store_true",
         help="compare a logistic stacker on OOF logits against the equal-weight rank average",
@@ -197,13 +206,27 @@ def main() -> None:
           f"{'' if args.weights is None else ' weights ' + str(args.weights)}")
     print(f"  blended OOF AUC {auc:.6f}")
 
-    res = bootstrap_auc_diff(y, oofs[best_single], blended, n_boot=args.n_boot)
-    print(f"  vs {best_single} alone   {res['diff']:+.6f}  "
+    if args.vs is None:
+        reference = oofs[best_single]
+        ref_label = f"{best_single} alone"
+        ref_noun = "single model"
+    else:
+        # The baseline is itself a blend, so it has to be built the same way the
+        # candidate is -- rank-average over the same y -- or the difference would
+        # confound "extra member" with "different combination rule".
+        ref_oofs = {r: oofs[r] if r in oofs else load_oof(r) for r in args.vs}
+        reference = rank_average([ref_oofs[r] for r in args.vs])
+        ref_label = "+".join(args.vs)
+        ref_noun = "baseline blend"
+        print(f"  baseline {ref_label} OOF AUC {roc_auc_score(y, reference):.6f}")
+
+    res = bootstrap_auc_diff(y, reference, blended, n_boot=args.n_boot)
+    print(f"  vs {ref_label}   {res['diff']:+.6f}  "
           f"95% CI [{res['ci_low']:+.6f}, {res['ci_high']:+.6f}]")
     print("  -> " + (
-        "the blend is a real improvement." if res["significant"] and res["diff"] > 0
-        else "WORSE than the single model." if res["significant"]
-        else "indistinguishable from the single model. Not an improvement."
+        f"a real improvement on the {ref_noun}." if res["significant"] and res["diff"] > 0
+        else f"WORSE than the {ref_noun}." if res["significant"]
+        else f"indistinguishable from the {ref_noun}. Not an improvement."
     ))
 
     if args.submit:

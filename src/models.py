@@ -366,6 +366,15 @@ def histgbm_encoded_v2() -> Pipeline:
     )
 
 
+def _lgbm_lookup():
+    """Imported lazily so the zoo still loads if lightgbm is not installed."""
+    from .lgbm_model import LGBMLookup
+
+    # lr 0.03 / 255 leaves measured 0.964978 on fold 1 against 0.964619 for
+    # lr 0.04 / 127 leaves; the larger, slower config is the better member.
+    return LGBMLookup(params=dict(learning_rate=0.03, num_leaves=255, n_estimators=3000))
+
+
 def _catboost_lookup():
     """Imported lazily so the zoo still loads if catboost is not installed."""
     from .catboost_model import catboost_lookup
@@ -418,6 +427,10 @@ MODELS = {
     "histgbm_native_cat": (histgbm_native_cat, "HistGBM, native categorical splits"),
     "histgbm_seedavg": (histgbm_tuned_seedavg, "Phase 7: tuned HistGBM, 5-seed average"),
     "histgbm_imputed": (histgbm_tuned_imputed, "Phase 8: tuned + imputed cols (replace)"),
+    "lgbm_lookup": (
+        _lgbm_lookup,
+        "Phase 13: LightGBM, gradient-sorted categorical splits",
+    ),
     "catboost_lookup": (
         _catboost_lookup,
         "Phase 11: CatBoost, ordered target statistics on raw levels",
