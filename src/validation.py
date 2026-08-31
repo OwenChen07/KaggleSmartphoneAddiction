@@ -100,6 +100,26 @@ def _count_model_features(fitted_estimator, fallback: int) -> int:
     return int(width) if width is not None else fallback
 
 
+def make_folds(
+    X: pd.DataFrame,
+    y,
+    *,
+    n_splits: int = N_SPLITS,
+    seed: int = SEED,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """The project's fold assignment, as a list of (train_idx, val_idx).
+
+    `run_cv` calls this rather than building the splitter itself, so there is
+    exactly one definition of the split in the codebase. That matters more
+    here than it usually would: every comparison in this project is *paired*
+    against OOF vectors on disk, and a probe script that re-derives the folds
+    by hand is one typed argument away from scoring on a different partition
+    and reporting a difference that is really just a different split.
+    """
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    return list(skf.split(X, y))
+
+
 def run_cv(
     estimator,
     X: pd.DataFrame,
@@ -129,7 +149,7 @@ def run_cv(
     """
     if (extra_X is None) != (extra_y is None):
         raise ValueError("pass both extra_X and extra_y, or neither")
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    folds = make_folds(X, y, n_splits=n_splits, seed=seed)
 
     oof = np.zeros(len(X), dtype=np.float64)
     test_pred = np.zeros(len(X_test), dtype=np.float64) if X_test is not None else None
@@ -137,7 +157,7 @@ def run_cv(
     n_model_features = 0
     start = time.perf_counter()
 
-    for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), start=1):
+    for fold, (train_idx, val_idx) in enumerate(folds, start=1):
         est = clone(estimator)
         X_fit, y_fit = X.iloc[train_idx], y[train_idx]
         if extra_X is not None:
