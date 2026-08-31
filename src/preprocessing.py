@@ -21,7 +21,13 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, OrdinalEncoder, StandardScaler
+from sklearn.preprocessing import (
+    FunctionTransformer,
+    OneHotEncoder,
+    OrdinalEncoder,
+    QuantileTransformer,
+    StandardScaler,
+)
 
 from .data import CATEGORICAL_COLS, FEATURE_COLS, NUMERIC_COLS
 
@@ -147,3 +153,69 @@ def missingness_only_preprocessor() -> ColumnTransformer:
     return ColumnTransformer(
         [("isna", missing_indicator_block(), FEATURE_COLS)], verbose_feature_names_out=False
     )
+
+
+def nn_preprocessor(
+    numeric_cols: list[str] | None = None,
+    categorical_cols: list[str] | None = None,
+    missing_indicators: bool = True,
+) -> ColumnTransformer:
+    """Preprocessing for a neural net: rank-normalise, then one-hot.
+
+    Not `linear_preprocessor`, for one reason: `StandardScaler`. Many of the
+    engineered columns are *ratios*, so their denominators approach zero and
+    the distributions carry heavy tails. Standardising divides by a standard
+    deviation those tails inflate, which leaves the bulk of the mass squeezed
+    into a narrow band near zero. A linear model does not care — it only ever
+    forms a weighted sum, and a scale change is absorbed by its coefficient.
+    A neural net does care: the first layer's activations saturate, and the
+    gradient through a saturated unit is close to zero, so the tails decide
+    the learning rate for every row.
+
+    `QuantileTransformer` maps each column onto its own rank and then through
+    the normal quantile function, so the output is Gaussian by construction no
+    matter how skewed the input. It is a monotone, per-column transform, which
+    is exactly the class of transform ROC AUC cannot see; it therefore changes
+    what the *network* can fit without changing what the metric would reward
+    from any single column on its own.
+
+    Rank transforms are fit-dependent, so this is only safe inside the fold --
+    which is what returning it unfitted enforces.
+    """
+    numeric_cols = NUMERIC_COLS if numeric_cols is None else numeric_cols
+    categorical_cols = CATEGORICAL_COLS if categorical_cols is None else categorical_cols
+
+    blocks = [
+        (
+            "num",
+            Pipeline(
+                [
+                    ("impute", SimpleImputer(strategy="median")),
+                    (
+                        "scale",
+                        QuantileTransformer(
+                            n_quantiles=1000,
+                            output_distribution="normal",
+                            subsample=200_000,
+                            random_state=0,
+                        ),
+                    ),
+                ]
+            ),
+            numeric_cols,
+        )
+    ]
+    if categorical_cols:
+        blocks.append(
+            (
+                "cat",
+                _categorical_pipeline(
+                    OneHotEncoder(handle_unknown="ignore", drop="first", sparse_output=False)
+                ),
+                categorical_cols,
+            )
+        )
+    if missing_indicators:
+        blocks.append(("isna", missing_indicator_block(), numeric_cols))
+
+    return ColumnTransformer(blocks, verbose_feature_names_out=False)

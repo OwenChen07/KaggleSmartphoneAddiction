@@ -242,3 +242,98 @@ would predict exactly what happened here — a diversity gain over-transferring
 where the earlier strength gains under-transferred. **One point is not
 evidence for it.** It becomes testable if a future iteration produces another
 diversity-driven gain and another strength-driven one.
+
+---
+
+## Iteration 3 — a non-tree function class: **null, and mildly harmful**
+
+### Hypothesis and falsifier, stated before the run
+
+Every member of the blend is an axis-aligned tree ensemble: each carves the
+space into boxes and fits a constant in each. They differ in *how* they choose
+the boxes, which is what iteration 2's gain came from. An MLP differs in what
+it can express at all — a smooth global function, where a diagonal boundary
+costs one unit instead of a staircase of splits.
+
+**Hypothesis.** Since iteration 2 established that decorrelation rather than
+solo strength buys blend gains, the most mechanistically distinct member
+available should pay even though it scores worse solo.
+
+**Falsifier.** The 4-way blend against the 3-way baseline has a CI including
+zero or negative.
+
+**Secondary prediction.** Spearman below 0.97 against every tree member; all
+tree-tree pairs sit at 0.979 or above.
+
+### Result: falsified
+
+Run `027`, full 5-fold: **OOF 0.964171**, folds ±0.00039, 664s.
+
+    blend 024+025+026+027   0.968321
+    baseline 024+025+026    0.968507
+    vs 024+025+026        -0.000186   95% CI [-0.000218, -0.000155]
+    -> WORSE than the baseline blend.
+
+**0.41x the fold noise, and the interval excludes zero on the wrong side.**
+Not merely a null — adding this member actively costs.
+
+The fold-1 probe predicted this almost exactly (-0.000181 for the registered
+width, -0.000144 for a wider one, against -0.000186 at full scale). Worth
+noting against iteration 2, where the fold-1 screen *underestimated* a real
+gain: a single fold is not reliably pessimistic or optimistic, it is simply
+noisy. The lesson stays "measure it properly", not "fold 1 lies in a known
+direction".
+
+### The secondary prediction was also wrong, and that is the interesting part
+
+| pair | Spearman |
+|---|---|
+| CatBoost vs HistGBM | 0.9861 |
+| CatBoost vs LightGBM | 0.9819 |
+| HistGBM vs LightGBM | 0.9791 |
+| CatBoost vs **MLP** | 0.9769 |
+| HistGBM vs **MLP** | 0.9820 |
+| LightGBM vs **MLP** | **0.9688** |
+
+Predicted below 0.97 against every tree member; it holds only against
+LightGBM. Against HistGBM it is 0.9820 — inside the tree-tree range.
+
+**Why: a design flaw I own.** `mlp_encoded` reuses run 025's *exact* Phase 12
+representation. Function class pushes the two apart, a shared feature space
+pulls them back together, and the second effect roughly cancelled the first.
+So this result is weaker evidence against neural members in general than it
+looks; it tests "a non-tree model on an identical representation", not "a
+non-tree model".
+
+### What actually explains the loss
+
+Not "too weak" on its own. The decisive comparison is *which* members a
+candidate is decorrelated from:
+
+| member | solo OOF | mean rho vs the two strong members | blend delta |
+|---|---|---|---|
+| LightGBM `026` | 0.965839 | 0.9805 | **+0.000156** |
+| MLP `027` | 0.964171 | 0.9795 | −0.000186 |
+
+The MLP is **0.001 less correlated** with the members that carry the blend —
+essentially nothing — while paying **0.00167** in solo strength. The genuine
+distinctiveness it does have is spent against LightGBM (0.9688), the *junior*
+member, where it buys almost nothing.
+
+**The rule this yields, sharper than iteration 2's:** a new member's
+decorrelation only pays *against the members already carrying the blend*.
+Decorrelation from a weak member is nearly worthless, because that member's
+own contribution is small to begin with. Iteration 2's headline —
+"decorrelation beats solo strength" — was too loose. The corrected version:
+**a member must be decorrelated from the leaders, and the cost of that
+decorrelation is paid in solo strength at roughly a 1:1 exchange rate.**
+LightGBM bought 0.0056 of decorrelation from CatBoost for 0.0021 of strength
+and paid off; the MLP bought 0.0010 for 0.0037 and did not.
+
+### Kept anyway
+
+The code stays in the tree (`nn_preprocessor`, `mlp_encoded`), and run `027`
+stays in the log with its OOF vector on disk. A negative member is still a
+measured, reproducible artefact, and the next iteration's question — whether a
+*different representation* rather than a different function class produces
+decorrelation from the leaders — needs this vector to compare against.
