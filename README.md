@@ -8,8 +8,9 @@ believed.
 
 - **Task:** predict `addicted_label` (binary), metric **ROC AUC**
 - **Data:** 691,369 train / 296,302 test rows; 9 numeric + 3 categorical features
-- **Best OOF AUC:** **0.96827** (rank-average of CatBoost `024` and HistGBM `023`)
-- **Public LB:** **0.96948**, rank **767 of 2,982**
+- **Best OOF AUC:** **0.968507** (rank-average of CatBoost `024`, HistGBM-encoded `025`
+  and LightGBM `026`)
+- **Public LB:** **0.96978**, rank **838 of 3,389**
 
 > Every model number below is out-of-fold cross-validation on the training set.
 > `public_lb` and `gap` in `experiments/log.csv` are filled in only after a
@@ -28,7 +29,9 @@ believed.
 | `019` | tuned + imputed columns (augment) | 32 | 0.963913 | **0.96607** | −0.002157 |
 | `020` | imputed + 5-seed average | 32 | 0.964709 | 0.96610 | −0.001391 |
 | `022` | target encoding + lattice + imputation | 69 | 0.967257 | 0.96905 | −0.001793 |
-| blend | **rank-avg CatBoost `024` + HistGBM `023`** | — | **0.968271** | **0.96948** | −0.001209 |
+| blend | rank-avg CatBoost `024` + HistGBM `023` | — | 0.968271 | 0.96948 | −0.001209 |
+| blend | rank-avg `024` + HistGBM-encoded `025` | — | 0.968351 | 0.96955 | −0.001199 |
+| blend | **rank-avg `024` + `025` + LightGBM `026`** | — | **0.968507** | **0.96978** | −0.001273 |
 
 **This table previously claimed the gap was "a stable property of the
 pipeline, not a per-model accident". That claim is now falsified, and the
@@ -362,6 +365,7 @@ always means a full-data run.
 
 | report | what it covers |
 |---|---|
+| [`DESIGN.md`](DESIGN.md) | **the design choices** — every decision, its reason, and the measurement that forced it |
 | [`reports/learning-notes.md`](reports/learning-notes.md) | **start here** — the concepts, explained from scratch |
 | [`reports/feature-engineering.md`](reports/feature-engineering.md) | Phase 4: which features survived and why |
 | [`reports/adversarial-validation.md`](reports/adversarial-validation.md) | Phase 5: train/test shift and what it means for OOF |
